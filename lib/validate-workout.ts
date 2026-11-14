@@ -1,6 +1,6 @@
 export type WorkoutBody = {
   workout: { id: string; startedAt: string; endedAt: string };
-  exercises: { id: string; exerciseId: string; order: number; variation?: string }[];
+  exercises: { id: string; exerciseId: string; order: number; variation?: string; label?: string }[];
   sets: {
     id: string;
     exerciseInstanceId: string;
@@ -29,6 +29,8 @@ export function validateWorkout(body: unknown): string | null {
     if (typeof ex.exerciseId !== "string" || !/^[a-z0-9_]{1,64}$/.test(ex.exerciseId)) return "Invalid exercise name";
     if (!Number.isInteger(ex.order) || ex.order < 0) return "Invalid exercise order";
     if (ex.variation != null && (typeof ex.variation !== "string" || ex.variation.length > 64)) return "Invalid variation";
+    // Optional: workouts kept on a phone from before P1-05 have no label.
+    if (ex.label != null && (typeof ex.label !== "string" || !ex.label.trim() || ex.label.length > 64)) return "Invalid exercise label";
     exerciseIds.add(ex.id);
   }
   for (const s of b.sets) {

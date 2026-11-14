@@ -5,7 +5,7 @@ import { validateWorkout } from "./validate-workout.ts";
 
 const ok = () => ({
   workout: { id: "w1", startedAt: "2026-11-10T10:00:00Z", endedAt: "2026-11-10T11:00:00Z" },
-  exercises: [{ id: "e1", exerciseId: "bench_press", order: 0 }],
+  exercises: [{ id: "e1", exerciseId: "bench_press", order: 0, label: "Bench press" } as { id: string; exerciseId: string; order: number; label?: string }],
   sets: [{ id: "s1", exerciseInstanceId: "e1", reps: 5, weight: 100, unit: "kg", createdAt: "2026-11-10T10:05:00Z" }],
 });
 
@@ -14,6 +14,9 @@ test("accepts a valid workout, including bodyweight (0 kg)", () => {
   const bw = ok();
   bw.sets[0].weight = 0;
   assert.equal(validateWorkout(bw), null);
+  const noLabel = ok(); // saved on a phone before labels existed
+  delete noLabel.exercises[0].label;
+  assert.equal(validateWorkout(noLabel), null);
 });
 
 test("rejects bad input", () => {
@@ -26,6 +29,8 @@ test("rejects bad input", () => {
     ["Invalid unit", (b) => (b.sets[0].unit = "st")],
     ["Invalid exercise name", (b) => (b.exercises[0].exerciseId = "Bench Press")],
     ["Invalid exercise id", (b) => b.exercises.push({ id: "e1", exerciseId: "row", order: 1 })],
+    ["Invalid exercise label", (b) => (b.exercises[0].label = "   ")],
+    ["Invalid exercise label", (b) => (b.exercises[0].label = "x".repeat(65))],
   ];
   for (const [msg, mutate] of cases) {
     const b = ok();

@@ -24,6 +24,12 @@ export async function POST(req: Request) {
   }
 
   const { workout, exercises, sets } = body;
+  // The lifter's name for each new exercise (the first name used is kept). Runs beside the workout transaction, so a save
+  // costs no extra round trip; it is not part of it, because a missing name only falls back to the slug.
+  const names = [...new Map(exercises.filter((e) => e.label).map((e) => [e.exerciseId, e.label!.trim()])).entries()];
+  const saveNames = prisma.exercise
+    .createMany({ data: names.map(([id, name]) => ({ userId, id, name })), skipDuplicates: true })
+    .catch(() => {});
   try {
     // 3 inserts in one transaction, whatever the workout size.
     await prisma.$transaction([
@@ -64,6 +70,7 @@ export async function POST(req: Request) {
     }
   }
 
+  await saveNames; // before the caches are cleared, so the next page shows the names
   revalidateTag(workoutsTag(userId), { expire: 0 });
   return NextResponse.json({ id: workout.id });
 }

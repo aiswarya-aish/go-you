@@ -7,7 +7,7 @@ import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { bestE1rmByExercise } from "@/lib/history";
+import { bestE1rmByExercise, getExerciseNames } from "@/lib/history";
 import { formatDayLabel, formatIn, formatTime, safeTimeZone, TZ_COOKIE } from "@/lib/time";
 import { durationMinutes, e1rmKg, exerciseName, formatLoad, formatNumber, prFlags, toKg } from "@/lib/lift";
 import StatGrid from "@/components/StatGrid";
@@ -19,11 +19,14 @@ export default async function WorkoutDetailPage({ params }: { params: Promise<{ 
   const userId = session!.user.id;
   const tz = safeTimeZone(jar.get(TZ_COOKIE)?.value);
 
-  const workout = await prisma.workout.findFirst({
-    where: { id, userId },
-    relationLoadStrategy: "join",
-    include: { exercises: { orderBy: { order: "asc" }, include: { sets: { orderBy: { createdAt: "asc" } } } } },
-  });
+  const [workout, names] = await Promise.all([
+    prisma.workout.findFirst({
+      where: { id, userId },
+      relationLoadStrategy: "join",
+      include: { exercises: { orderBy: { order: "asc" }, include: { sets: { orderBy: { createdAt: "asc" } } } } },
+    }),
+    getExerciseNames(userId),
+  ]);
   if (!workout) notFound();
 
   // Bests from earlier workouts, so this workout's PR sets can be marked.
@@ -61,7 +64,7 @@ export default async function WorkoutDetailPage({ params }: { params: Promise<{ 
         return (
           <article key={exercise.id} className="space-y-3">
             <header className="flex items-baseline justify-between gap-3 border-t-2 border-[var(--fg)] pt-3">
-              <h2 className="text-xl font-bold uppercase leading-tight tracking-[-0.01em]">{exerciseName(exercise.exerciseId)}</h2>
+              <h2 className="text-xl font-bold uppercase leading-tight tracking-[-0.01em]">{exerciseName(exercise.exerciseId, names[exercise.exerciseId])}</h2>
               <p className="label shrink-0">e1RM {formatNumber(topE1rm)} kg</p>
             </header>
             <ol className="border-b border-[var(--divider)]">

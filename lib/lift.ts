@@ -1,4 +1,5 @@
 // Pure lifting maths + formatting, shared by server pages and the live logger.
+import { LIBRARY } from "./exercises.ts"; // relative: also loaded by node's test runner
 
 export type Unit = "kg" | "lb";
 export const KG_PER_LB = 0.45359237;
@@ -23,7 +24,9 @@ export function prFlags(sets: { weight: number; reps: number; unit: string }[], 
 
 export const durationMinutes = (startMs: number, endMs: number) => Math.max(1, Math.round((endMs - startMs) / 60000));
 
-export const exerciseName = (slug: string) => slug.replace(/_/g, " ").toUpperCase();
+// The lifter's saved name (P1-05), else the library's spelling ("pull_up" → "PULL-UP"), else the slug spelled out. Always caps.
+export const exerciseName = (slug: string, saved?: string) =>
+  (saved ?? LIBRARY.find((l) => l.id === slug)?.name ?? slug.replace(/_/g, " ")).toUpperCase();
 
 const number = new Intl.NumberFormat("en", { maximumFractionDigits: 1 });
 const whole = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });

@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { formatDayMonth, safeTimeZone, TZ_COOKIE } from "@/lib/time";
 import { exerciseName, formatLoad, formatNumber, fromKg, type Unit } from "@/lib/lift";
 import { getStats, resolveRange, resolveUnit, type Range } from "@/lib/stats";
+import { getExerciseNames } from "@/lib/history";
 import StatGrid from "@/components/StatGrid";
 
 export const metadata: Metadata = { title: "Stats" };
@@ -57,7 +58,7 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
   const range = resolveRange(params.range);
   const unit = resolveUnit(params.unit);
   const tz = safeTimeZone(jar.get(TZ_COOKIE)?.value);
-  const data = await getStats(session!.user.id, range, tz);
+  const [data, names] = await Promise.all([getStats(session!.user.id, range, tz), getExerciseNames(session!.user.id)]);
   const u = (kg: number) => fromKg(kg, unit);
   const maxTrendVolume = Math.max(0, ...data.volumeTrend.map((e) => e.volumeKg));
 
@@ -93,7 +94,7 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
                 {data.recentPrs.map((pr) => (
                   <li key={pr.setId} className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-[var(--divider)] py-3">
                     <span className="min-w-0">
-                      <span className="block truncate text-base font-bold tracking-[-0.01em]">{exerciseName(pr.exerciseId)}</span>
+                      <span className="block truncate text-base font-bold tracking-[-0.01em]">{exerciseName(pr.exerciseId, names[pr.exerciseId])}</span>
                       <span className="label mt-1 block">
                         {formatDayMonth(new Date(pr.occurredAt), tz)} · {pr.reps} × {formatLoad(u(pr.weightKg), unit)}
                       </span>
@@ -136,7 +137,7 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
               {data.topExercises.map((ex) => (
                 <li key={ex.exerciseId} className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-t border-[var(--divider)] py-3">
                   <span className="min-w-0">
-                    <span className="block truncate text-base font-bold tracking-[-0.01em]">{exerciseName(ex.exerciseId)}</span>
+                    <span className="block truncate text-base font-bold tracking-[-0.01em]">{exerciseName(ex.exerciseId, names[ex.exerciseId])}</span>
                     <span className="label mt-1 block">
                       {ex.setCount} sets · {ex.workoutCount} workouts
                     </span>
