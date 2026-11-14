@@ -109,6 +109,23 @@ output,
   animation: stamp 280ms var(--ease-out);
 }
 
+/* Saved receipt: each new best rises into place once, in order (60ms apart). Rare by design, so it can be felt. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+.rise {
+  animation: rise 360ms var(--ease-out) both;
+  animation-delay: calc(120ms + var(--i, 0) * 60ms);
+}
+
 /* Bottom sheet enters and leaves along the same path. */
 .sheet {
   transition: transform var(--dur-sheet) var(--ease-sheet), opacity var(--dur-sheet) var(--ease-sheet);
@@ -156,5 +173,9 @@ output,
   }
   .stamp {
     animation-duration: 200ms;
+  }
+  .rise {
+    animation-name: fade;
+    animation-delay: 0ms;
   }
 }

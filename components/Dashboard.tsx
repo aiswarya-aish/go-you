@@ -124,19 +124,40 @@ function SavedReceipt({ receipt, onDismiss }: { receipt: Receipt; onDismiss: () 
           Dismiss
         </button>
       </div>
-      <dl className="grid grid-cols-3 gap-4">
+      <dl className="grid grid-cols-[auto_auto_1fr] gap-x-6 gap-y-4">
         {[
           ["Time", receipt.duration],
           ["Sets", String(receipt.sets)],
-          ["PRs", String(receipt.prs)],
+          [`Volume ${receipt.unit}`, receipt.volume],
         ].map(([k, v]) => (
           <div key={k}>
             <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{k}</dt>
-            <dd className="text-3xl font-bold leading-none tabular">{v}</dd>
+            <dd className="text-3xl font-bold leading-none tracking-[-0.02em] tabular">{v}</dd>
           </div>
         ))}
       </dl>
-      {receipt.prs > 0 && <p className="text-sm font-semibold">{receipt.prNames.join(" · ")}</p>}
+      {/* The peak of the session: each new best, with how far it moved the estimated max. Rises in once, in order. */}
+      {receipt.prs.length > 0 && (
+        <div>
+          <p className="pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">
+            {receipt.prs.length === 1 ? "New best" : `${receipt.prs.length} new bests`}
+          </p>
+          <ul>
+            {receipt.prs.map((p, i) => (
+              <li
+                key={i}
+                style={{ "--i": i } as React.CSSProperties}
+                className="rise flex items-baseline justify-between gap-3 border-t border-[var(--muted)] py-2"
+              >
+                <span className="truncate text-base font-bold uppercase tracking-[-0.01em]">{p.name}</span>
+                <span className="shrink-0 text-sm font-bold tabular">
+                  {p.gain} <span className="text-[10px] font-semibold tracking-[0.16em] opacity-70">EST. 1RM</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

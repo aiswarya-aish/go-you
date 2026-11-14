@@ -22,7 +22,16 @@ export function prFlags(sets: { weight: number; reps: number; unit: string }[], 
   });
 }
 
-export const durationMinutes = (startMs: number, endMs: number) => Math.max(1, Math.round((endMs - startMs) / 60000));
+// One rule for logging and editing a set, matching what the server accepts (validate-workout.ts), so a save is never refused later.
+export function setProblem(reps: string, weight: string): string | null {
+  const r = Number(reps);
+  const w = weight.trim() === "" ? NaN : Number(weight);
+  if (!Number.isInteger(r) || r < 1 || r > 1000) return "Reps: a whole number from 1 to 1000.";
+  if (!Number.isFinite(w) || w < 0 || w > 2000) return "Weight: 0 (bodyweight) up to 2000.";
+  return null;
+}
+
+export const durationMinutes =(startMs: number, endMs: number) => Math.max(1, Math.round((endMs - startMs) / 60000));
 
 // The lifter's saved name (P1-05), else the library's spelling ("pull_up" → "PULL-UP"), else the slug spelled out. Always caps.
 export const exerciseName = (slug: string, saved?: string) =>

@@ -17,7 +17,7 @@ export default function ExercisePicker({
 }: {
   mine: { id: string; name: string }[]; // most recent first
   last: Record<string, LastSet[]>;
-  onAdd: (exerciseId: string, label: string) => void;
+  onAdd: (exerciseId: string, label: string, keepTyping: boolean) => void;
 }) {
   const options = useMemo(() => exerciseOptions(mine), [mine]);
   const [query, setQuery] = useState("");
@@ -40,8 +40,11 @@ export default function ExercisePicker({
   const shown = open && items.length > 0;
   const current = Math.min(typed ? Math.max(active, 0) : active, items.length - 1);
 
-  function pick(item: Item) {
-    onAdd(item.id, item.name);
+  // A touch screen closes its keyboard after a pick; a physical keyboard (Enter on a desktop) keeps typing into reps.
+  function pick(item: Item, viaKeyboard: boolean) {
+    const keepTyping = viaKeyboard && !matchMedia("(pointer: coarse)").matches;
+    if (!keepTyping) input.current?.blur();
+    onAdd(item.id, item.name, keepTyping);
     setQuery("");
     setActive(-1);
     setOpen(false);
@@ -64,7 +67,7 @@ export default function ExercisePicker({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (items[current]) pick(items[current]);
+        if (items[current]) pick(items[current], true);
       }}
       className="space-y-2"
     >
@@ -117,7 +120,7 @@ export default function ExercisePicker({
                 id={`exercise-option-${i}`}
                 role="option"
                 aria-selected={i === current}
-                onClick={() => pick(item)}
+                onClick={() => pick(item, false)}
                 onPointerEnter={(e) => e.pointerType === "mouse" && setActive(i)}
                 className={`press grid min-h-[var(--tap-lg)] cursor-pointer grid-cols-[1fr_auto] items-center gap-3 border-t border-[var(--divider)] px-4 active:bg-[var(--fg)] active:text-[var(--bg)] ${
                   i === current ? "bg-[var(--fg)] text-[var(--bg)]" : ""

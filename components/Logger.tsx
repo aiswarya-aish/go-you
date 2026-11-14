@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useWorkoutStore } from "@/state/workoutStore";
 import type { ExerciseInstance, SetEntry } from "@/domain/workout";
 import type { ExerciseHistory } from "@/lib/history";
-import { durationMinutes, formatLoad, formatNumber, fromKg, prFlags, sessionSummary, toKg, type Unit } from "@/lib/lift";
+import { durationMinutes, formatLoad, formatNumber, fromKg, prFlags, sessionSummary, setProblem, toKg, type Unit } from "@/lib/lift";
+import { sessionReport } from "@/lib/report";
 import ExercisePicker from "@/components/ExercisePicker";
 import NumberField from "@/components/NumberField";
 import SetRow from "@/components/SetRow";
@@ -14,7 +15,7 @@ import RestTimer from "@/components/RestTimer";
 import { useNow } from "@/lib/useNow";
 import { formatClock } from "@/lib/time";
 
-export type Receipt = { duration: string; sets: number; prs: number; prNames: string[] };
+export type Receipt = { duration: string; sets: number; volume: string; unit: Unit; prs: { name: string; gain: string }[] };
 
 const minutes = (startedAt: string) => `${durationMinutes(Date.parse(startedAt), Date.now())}M`;
 const buzz = (pattern: number | number[]) => navigator.vibrate?.(pattern);
@@ -62,20 +63,21 @@ export default function Logger({
     const sets = active.sets.filter((s) => s.exerciseInstanceId === ex.id);
     prFlags(sets, history.bestE1rmKg[ex.exerciseId]).forEach((pr, i) => flags.set(sets[i].id, pr));
   }
-  const prExercises = [...new Set(active.sets.filter((s) => flags.get(s.id)).map((s) => s.exerciseInstanceId))].map(
-    (id) => active.exercises.find((e) => e.id === id)!.label.toUpperCase(),
-  );
-  const volumeKg = active.sets.reduce((sum, s) => sum + toKg(s.weight, s.unit) * s.reps, 0);
+  const report = sessionReport(active.exercises, active.sets, history.last, history.bestE1rmKg);
+  // A PR is always a gain: a sliver under 0.05 shows as the smallest step (+0.1), never "+0".
+  const gain = (kg: number) => `+${formatNumber(Math.max(0.1, fromKg(kg, unit)))}`;
+  const volume = `${formatNumber(Math.round(fromKg(report.volumeKg, unit)))}`;
   // Rest counts from the newest set (sets are kept in time order).
   const lastSetAt = active.sets.at(-1)?.createdAt;
   useWakeLock();
 
-  function handleAdd(exerciseId: string, label: string) {
+  // Brings the new exercise into view. Only a keyboard pick moves focus to its reps; a tap leaves the keyboard closed.
+  function handleAdd(exerciseId: string, label: string, viaKeyboard: boolean) {
     const id = addExercise(exerciseId, label);
     requestAnimationFrame(() => {
       const input = document.getElementById(`reps-${id}`);
       input?.scrollIntoView({ block: "center", behavior: "smooth" });
-      input?.focus({ preventScroll: true });
+      if (viaKeyboard) input?.focus({ preventScroll: true });
     });
   }
 
@@ -114,7 +116,13 @@ export default function Logger({
             : ((await res.json().catch(() => null))?.error ?? `Server error ${res.status}.`);
         throw new Error(reason);
       }
-      onSaved({ duration: minutes(w.workout.startedAt), sets: w.sets.length, prs: prExercises.length, prNames: prExercises });
+      onSaved({
+        duration: minutes(w.workout.startedAt),
+        sets: w.sets.length,
+        volume,
+        unit,
+        prs: report.prs.map((p) => ({ name: p.name, gain: `${gain(p.gainKg)} ${unit.toUpperCase()}` })),
+      });
       // Only clear the workout once the server has it.
       endWorkout();
       window.scrollTo(0, 0);
@@ -221,56 +229,113 @@ export default function Logger({
         inert={!finishing}
         data-open={finishing}
         onKeyDown={(e) => e.key === "Escape" && setFinishing(false)}
-        className="sheet fixed inset-x-0 bottom-0 z-50 border-t-2 border-[var(--fg)] bg-[var(--bg)] px-4 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:left-[220px]"
+        className="sheet fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col border-t-2 border-[var(--fg)] bg-[var(--bg)] md:left-[220px]"
       >
-        <div className="mx-auto max-w-xl space-y-5">
-          <h2 id="finish-title" ref={sheetTitle} tabIndex={-1} className="display text-3xl outline-none">
-            Finish workout
-          </h2>
-          <StatGrid
-            size="text-xl"
-            items={[
-              ["Time", minutes(active.workout.startedAt)],
-              ["Sets", String(active.sets.length)],
-              [`Vol ${unit}`, formatNumber(Math.round(fromKg(volumeKg, unit)))],
-              ["PRs", String(prExercises.length)],
-            ]}
-          />
-          {prExercises.length > 0 && <p className="text-sm font-semibold">PR · {prExercises.join(" · ")}</p>}
+        {/* The report scrolls; the save actions below it never leave the thumb's reach. */}
+        <div className="overflow-y-auto overscroll-contain px-4 pt-5 pb-6">
+          <div className="mx-auto max-w-xl space-y-6">
+            <h2 id="finish-title" ref={sheetTitle} tabIndex={-1} className="display text-3xl outline-none">
+              Finish workout
+            </h2>
+            <StatGrid
+              size="text-xl"
+              items={[
+                ["Time", minutes(active.workout.startedAt)],
+                ["Sets", String(active.sets.length)],
+                [`Vol ${unit}`, volume],
+                ["PRs", String(report.prs.length)],
+              ]}
+            />
 
-          {saveError && (
-            <div role="alert" className="border border-[var(--danger)] px-4 py-3 text-sm text-[var(--danger)]">
-              Not saved. {saveError} Your sets are kept on this device.
+            {report.prs.length > 0 && (
+              <section aria-labelledby="finish-prs" className="space-y-2">
+                <h3 id="finish-prs" className="label">
+                  New bests
+                </h3>
+                <ul className="space-y-px">
+                  {report.prs.map((p, i) => (
+                    <li key={i} className="grid grid-cols-[1fr_auto] items-center gap-3 bg-[var(--fg)] px-4 py-3 text-[var(--bg)]">
+                      <span className="min-w-0">
+                        <span className="block truncate text-base font-bold uppercase tracking-[-0.01em]">{p.name}</span>
+                        <span className="mt-0.5 block text-xs font-semibold uppercase tracking-[0.08em] opacity-70">
+                          {p.set.reps} @ {formatLoad(p.set.weight, p.set.unit)}
+                        </span>
+                      </span>
+                      <span className="text-right">
+                        <span className="block text-xl font-bold leading-none tracking-[-0.02em] tabular">{gain(p.gainKg)}</span>
+                        <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{unit} est. 1RM</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-[var(--muted)]">Est. 1RM: the most you could lift once, worked out from the set.</p>
+              </section>
+            )}
+
+            {report.lines.length > 0 && (
+              <section aria-labelledby="finish-vs" className="space-y-2">
+                <h3 id="finish-vs" className="label">
+                  Vs last session
+                </h3>
+                <ul className="border-b border-[var(--divider)]">
+                  {report.lines.map((l, i) => (
+                    <li key={i} className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-[var(--divider)] py-3">
+                      <span className="min-w-0">
+                        <span className="block truncate text-base font-bold uppercase tracking-[-0.01em]">{l.name}</span>
+                        <span className="label mt-0.5 block">Top {l.today}</span>
+                      </span>
+                      <span className="text-right">
+                        <span
+                          className={`block text-base font-bold leading-none tabular ${l.change && l.change.pct > 0 ? "" : "text-[var(--muted)]"}`}
+                        >
+                          {!l.change ? "New" : l.change.pct === 0 ? "Same" : `${l.change.pct > 0 ? "+" : ""}${l.change.pct}%`}
+                        </span>
+                        <span className="label mt-1 block">{l.change ? l.change.by : "First time"}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-[var(--divider)] px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="mx-auto max-w-xl space-y-3">
+            {saveError && (
+              <div role="alert" className="border border-[var(--danger)] px-4 py-3 text-sm text-[var(--danger)]">
+                Not saved. {saveError} Your sets are kept on this device.
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => setFinishing(false)} className="btn btn-lg">
+                Keep going
+              </button>
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving || active.sets.length === 0}
+                aria-busy={saving}
+                className="btn btn-primary btn-lg"
+              >
+                {saving ? "Saving…" : saveError ? "Retry" : "Save workout"}
+              </button>
             </div>
-          )}
+            {active.sets.length === 0 && <p className="text-xs text-[var(--muted)]">Log at least one set to save.</p>}
 
-          <div className="grid grid-cols-2 gap-3">
-            <button type="button" onClick={() => setFinishing(false)} className="btn btn-lg">
-              Keep going
-            </button>
             <button
               type="button"
-              onClick={save}
-              disabled={saving || active.sets.length === 0}
-              aria-busy={saving}
-              className="btn btn-primary btn-lg"
+              onClick={() => {
+                if (!confirmDiscard) return setConfirmDiscard(true);
+                endWorkout();
+                window.scrollTo(0, 0);
+              }}
+              className="press label w-full py-2 text-center text-[var(--danger)]"
             >
-              {saving ? "Saving…" : saveError ? "Retry" : "Save workout"}
+              {confirmDiscard ? "Tap again to discard all sets" : "Discard workout"}
             </button>
           </div>
-          {active.sets.length === 0 && <p className="text-xs text-[var(--muted)]">Log at least one set to save.</p>}
-
-          <button
-            type="button"
-            onClick={() => {
-              if (!confirmDiscard) return setConfirmDiscard(true);
-              endWorkout();
-              window.scrollTo(0, 0);
-            }}
-            className="press label w-full py-2 text-center text-[var(--danger)]"
-          >
-            {confirmDiscard ? "Tap again to discard all sets" : "Discard workout"}
-          </button>
         </div>
       </section>
     </section>
@@ -343,14 +408,12 @@ function ExerciseBlock({
 
   function log(e: React.FormEvent) {
     e.preventDefault();
-    const r = Number(reps);
-    const w = weight.trim() === "" ? NaN : Number(weight);
-    if (!Number.isInteger(r) || r < 1 || r > 1000) return setError("Reps must be a whole number from 1.");
-    if (!Number.isFinite(w) || w < 0 || w > 2000) return setError("Weight must be 0 (bodyweight) or more.");
-    setError(null);
-    const entry = addSet(exercise.id, r, w, unit);
+    const problem = setProblem(reps, weight);
+    setError(problem);
+    if (problem) return;
+    // Focus stays where it is: a tap on Log set never opens the keyboard, Enter in a field keeps typing there.
+    const entry = addSet(exercise.id, Number(reps), Number(weight), unit);
     onLogged(entry, prFlags([...sets, entry], bestKg).at(-1)!);
-    document.getElementById(`reps-${exercise.id}`)?.focus({ preventScroll: true });
   }
 
   return (

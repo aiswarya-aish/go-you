@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useWorkoutStore } from "@/state/workoutStore";
 import type { SetEntry } from "@/domain/workout";
-import { formatLoad } from "@/lib/lift";
+import { formatLoad, setProblem } from "@/lib/lift";
 
 export default function SetRow({
   set,
@@ -34,11 +34,9 @@ export default function SetRow({
 
   function save(e: React.FormEvent) {
     e.preventDefault();
-    const r = Number(reps);
-    const w = Number(weight);
-    if (!Number.isInteger(r) || r < 1) return setError("Reps must be a whole number from 1.");
-    if (weight.trim() === "" || !Number.isFinite(w) || w < 0) return setError("Weight must be 0 (bodyweight) or more.");
-    updateSet(set.id, { reps: r, weight: w });
+    const problem = setProblem(reps, weight); // same limits as the server, so an edit can't make the save fail later
+    if (problem) return setError(problem);
+    updateSet(set.id, { reps: Number(reps), weight: Number(weight) });
     setEditing(false);
   }
 

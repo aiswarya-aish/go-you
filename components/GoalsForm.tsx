@@ -40,6 +40,7 @@ export default function GoalsForm() {
           onChange={edit(setWeekly)}
           step={1}
           min={GOAL_LIMITS.weekly[0]}
+          max={GOAL_LIMITS.weekly[1]}
           hint={`${GOAL_LIMITS.weekly[0]}–${GOAL_LIMITS.weekly[1]}`}
         />
         <NumberField
@@ -49,6 +50,7 @@ export default function GoalsForm() {
           onChange={edit(setMonthly)}
           step={1}
           min={GOAL_LIMITS.monthly[0]}
+          max={GOAL_LIMITS.monthly[1]}
           hint={`${GOAL_LIMITS.monthly[0]}–${GOAL_LIMITS.monthly[1]}`}
         />
       </div>

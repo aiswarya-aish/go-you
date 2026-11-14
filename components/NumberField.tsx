@@ -8,6 +8,7 @@ export default function NumberField({
   onChange,
   step,
   min = 0,
+  max = Infinity,
   decimal = false,
   large = false,
   hint,
@@ -18,13 +19,14 @@ export default function NumberField({
   onChange: (value: string) => void;
   step: number;
   min?: number;
+  max?: number; // + stops here, so the field never shows a value that would be clamped on save
   decimal?: boolean;
   large?: boolean;
   hint?: string;
 }) {
   const bump = (delta: number) => {
     const current = Number(value) || 0;
-    onChange(String(Math.max(min, Math.round((current + delta) * 100) / 100)));
+    onChange(String(Math.min(max, Math.max(min, Math.round((current + delta) * 100) / 100))));
   };
   const name = label.split(" · ")[0].toLowerCase(); // "Weight · kg" -> "weight" for the stepper labels
   const cell = large ? "h-[var(--tap-lg)]" : "h-[var(--tap)]";
