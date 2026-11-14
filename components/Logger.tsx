@@ -6,7 +6,7 @@ import { useWorkoutStore } from "@/state/workoutStore";
 import type { ExerciseInstance, SetEntry } from "@/domain/workout";
 import type { ExerciseHistory } from "@/lib/history";
 import { durationMinutes, formatLoad, formatNumber, fromKg, prFlags, sessionSummary, toKg, type Unit } from "@/lib/lift";
-import AddExerciseInput from "@/components/AddExerciseInput";
+import ExercisePicker from "@/components/ExercisePicker";
 import NumberField from "@/components/NumberField";
 import SetRow from "@/components/SetRow";
 import StatGrid from "@/components/StatGrid";
@@ -182,7 +182,7 @@ export default function Logger({
       </div>
 
       <section className="border-t-2 border-[var(--fg)] pt-6">
-        <AddExerciseInput onAdd={handleAdd} suggestions={Object.keys(history.bestE1rmKg)} />
+        <ExercisePicker mine={history.mine} last={history.last} onAdd={handleAdd} />
       </section>
 
       <p role="status" aria-live="polite" className="sr-only">

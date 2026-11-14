@@ -12,6 +12,18 @@ model User {
   email        String    @unique
   passwordHash String
   workouts     Workout[]
+  exercises    Exercise[]
+}
+
+// The lifter's own name for an exercise slug ("Pull-up" for pullup), saved the first time it is logged (DD-040).
+model Exercise {
+  userId String
+  id     String // the slug used in ExerciseInstance.exerciseId
+  name   String
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([userId, id])
 }
 
 model Workout {

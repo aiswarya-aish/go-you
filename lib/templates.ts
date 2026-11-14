@@ -13,7 +13,7 @@ export type ProgramTemplate = {
 // `workouts`: newest first, each the ordered exercise slugs of one session.
 // Same set of exercises = same routine. A routine must repeat to count; most repeated first, ties by recency.
 // shortcut: swapping one exercise makes a new routine (no fuzzy matching); upgrade if users vary their sessions a lot.
-export function buildTemplates(workouts: string[][], max = 4): ProgramTemplate[] {
+export function buildTemplates(workouts: string[][], max = 4, names: Record<string, string> = {}): ProgramTemplate[] {
   const groups = new Map<string, { order: string[]; count: number }>();
   for (const ids of workouts) {
     const order = [...new Set(ids)];
@@ -31,6 +31,6 @@ export function buildTemplates(workouts: string[][], max = 4): ProgramTemplate[]
       id: key,
       name: `ROUTINE ${String.fromCharCode(65 + i)}`,
       timesDone: g.count,
-      exercises: g.order.map((exerciseId) => ({ exerciseId, label: exerciseName(exerciseId) })),
+      exercises: g.order.map((exerciseId) => ({ exerciseId, label: exerciseName(exerciseId, names[exerciseId]) })),
     }));
 }

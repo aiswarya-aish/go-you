@@ -18,6 +18,9 @@ test("templates come from repeated sessions, most repeated first", () => {
   // order comes from the newest session of that routine
   assert.deepEqual(t[0].exercises.map((e) => e.exerciseId), ["overhead_press", "bench_press", "tricep_pushdown"]);
   assert.equal(t[0].exercises[1].label, "BENCH PRESS");
+  assert.equal(t[1].exercises[1].label, "PULL-UP"); // library spelling for a slug with no saved name
   assert.deepEqual(buildTemplates([]), []);
+  // A saved name (P1-05) replaces the spelled-out slug.
+  assert.equal(buildTemplates([push, push], 4, { bench_press: "Bench press (paused)" })[0].exercises[0].label, "BENCH PRESS (PAUSED)");
   assert.equal(buildTemplates(Array.from({ length: 6 }, (_, i) => [`a${i}`, `b${i}`, `a${i}`]).flatMap((x) => [x, x])).length, 4);
 });

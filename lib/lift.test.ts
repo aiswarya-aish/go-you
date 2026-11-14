@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { durationMinutes, e1rmKg, formatLoad, prFlags, sessionSummary, toKg } from "./lift.ts";
+import { durationMinutes, e1rmKg, exerciseName, formatLoad, prFlags, sessionSummary, toKg } from "./lift.ts";
+
+test("exercise names: saved, then library spelling, then the slug", () => {
+  assert.equal(exerciseName("pull_up", "Pull-ups (weighted)"), "PULL-UPS (WEIGHTED)");
+  assert.equal(exerciseName("pull_up"), "PULL-UP");
+  assert.equal(exerciseName("zercher_squat"), "ZERCHER SQUAT");
+});
 
 test("lifting maths and formatting", () => {
   assert.equal(Math.round(toKg(100, "lb") * 100) / 100, 45.36);

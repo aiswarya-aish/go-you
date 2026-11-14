@@ -2,14 +2,25 @@ import { unstable_cache } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { workoutsTag } from "@/lib/stats";
-import { KG_PER_LB } from "@/lib/lift";
+import { exerciseName, KG_PER_LB } from "@/lib/lift";
 import { buildTemplates, TEMPLATE_UNLOCK_SESSIONS, type ProgramTemplate } from "@/lib/templates";
 
 export type LastSet = { reps: number; weight: number; unit: string };
 export type ExerciseHistory = {
   last: Record<string, LastSet[]>; // sets from the most recent session of each exercise
   bestE1rmKg: Record<string, number>; // all-time best Epley e1RM per exercise
+  mine: { id: string; name: string }[]; // every exercise the lifter has logged, most recent first, by their saved name
 };
+
+// slug → the lifter's saved name (P1-05). Pages hand it to exerciseName().
+async function loadNames(userId: string): Promise<Record<string, string>> {
+  // Names only dress up slugs: if the table is missing (deploy before `migrate deploy`), pages still render with spelled-out slugs.
+  const rows = await prisma.exercise.findMany({ where: { userId }, select: { id: true, name: true } }).catch(() => []);
+  return Object.fromEntries(rows.map((r) => [r.id, r.name]));
+}
+
+export const getExerciseNames = (userId: string) =>
+  unstable_cache(() => loadNames(userId), ["names", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
 
 // Best Epley e1RM (kg) per exercise, optionally only from workouts that started before `before`.
 export async function bestE1rmByExercise(userId: string, before?: Date): Promise<Record<string, number>> {
@@ -25,21 +36,27 @@ export async function bestE1rmByExercise(userId: string, before?: Date): Promise
 }
 
 async function load(userId: string): Promise<ExerciseHistory> {
-  const [recent, bestE1rmKg] = await Promise.all([
+  const [recent, bestE1rmKg, names] = await Promise.all([
     // shortcut: only the last 150 exercise entries are scanned for "last session"; older-only exercises show no LAST line.
     prisma.exerciseInstance.findMany({
       where: { workout: { userId } },
-      orderBy: { workout: { startedAt: "desc" } },
+      orderBy: [{ workout: { startedAt: "desc" } }, { order: "desc" }], // newest session, last exercise first
       take: 150,
       relationLoadStrategy: "join",
       select: { exerciseId: true, sets: { orderBy: { createdAt: "asc" }, select: { reps: true, weight: true, unit: true } } },
     }),
     bestE1rmByExercise(userId),
+    loadNames(userId),
   ]);
 
   const last: ExerciseHistory["last"] = {};
   for (const ex of recent) if (!last[ex.exerciseId] && ex.sets.length) last[ex.exerciseId] = ex.sets;
-  return { last, bestE1rmKg };
+  // Recent first (the order of `last`), then the rest of the lifter's exercises.
+  const mine = [...new Set([...Object.keys(last), ...Object.keys(bestE1rmKg)])].map((id) => ({
+    id,
+    name: names[id] ?? exerciseName(id),
+  }));
+  return { last, bestE1rmKg, mine };
 }
 
 export const getExerciseHistory = (userId: string) =>
@@ -48,7 +65,7 @@ export const getExerciseHistory = (userId: string) =>
 export type TemplateProgress = { sessions: number; templates: ProgramTemplate[] };
 
 async function loadTemplates(userId: string): Promise<TemplateProgress> {
-  const [sessions, recent] = await Promise.all([
+  const [sessions, recent, names] = await Promise.all([
     prisma.workout.count({ where: { userId } }),
     // shortcut: routines are looked for in the last 60 sessions only.
     prisma.workout.findMany({
@@ -58,9 +75,10 @@ async function loadTemplates(userId: string): Promise<TemplateProgress> {
       relationLoadStrategy: "join",
       select: { exercises: { orderBy: { order: "asc" }, select: { exerciseId: true } } },
     }),
+    loadNames(userId),
   ]);
   const unlocked = sessions >= TEMPLATE_UNLOCK_SESSIONS;
-  return { sessions, templates: unlocked ? buildTemplates(recent.map((w) => w.exercises.map((e) => e.exerciseId))) : [] };
+  return { sessions, templates: unlocked ? buildTemplates(recent.map((w) => w.exercises.map((e) => e.exerciseId)), 4, names) : [] };
 }
 
 // Session count + earned templates (empty until unlocked). Cached per user, cleared on every save.

@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getExerciseNames } from "@/lib/history";
 import { formatDayLabel, formatIn, formatTime, safeTimeZone, TZ_COOKIE } from "@/lib/time";
 import { durationMinutes, exerciseName } from "@/lib/lift";
 
@@ -16,18 +17,21 @@ export default async function LogPage({ searchParams }: { searchParams: Promise<
   const tz = safeTimeZone(jar.get(TZ_COOKIE)?.value);
   const cursor = before && !Number.isNaN(Date.parse(before)) ? new Date(before) : null;
 
-  const rows = await prisma.workout.findMany({
-    where: { userId: session!.user.id, ...(cursor ? { startedAt: { lt: cursor } } : {}) },
-    orderBy: { startedAt: "desc" },
-    take: PAGE + 1,
-    relationLoadStrategy: "join",
-    select: {
-      id: true,
-      startedAt: true,
-      endedAt: true,
-      exercises: { orderBy: { order: "asc" }, select: { exerciseId: true, _count: { select: { sets: true } } } },
-    },
-  });
+  const [rows, names] = await Promise.all([
+    prisma.workout.findMany({
+      where: { userId: session!.user.id, ...(cursor ? { startedAt: { lt: cursor } } : {}) },
+      orderBy: { startedAt: "desc" },
+      take: PAGE + 1,
+      relationLoadStrategy: "join",
+      select: {
+        id: true,
+        startedAt: true,
+        endedAt: true,
+        exercises: { orderBy: { order: "asc" }, select: { exerciseId: true, _count: { select: { sets: true } } } },
+      },
+    }),
+    getExerciseNames(session!.user.id),
+  ]);
   const workouts = rows.slice(0, PAGE);
   const older = rows.length > PAGE ? workouts[PAGE - 1].startedAt.toISOString() : null;
 
@@ -63,7 +67,7 @@ export default async function LogPage({ searchParams }: { searchParams: Promise<
                       {mins ? ` · ${mins} MIN` : ""}
                     </span>
                     <span className="mt-1 block truncate text-xs text-[var(--muted)]">
-                      {w.exercises.map((e) => exerciseName(e.exerciseId)).join(" / ")}
+                      {w.exercises.map((e) => exerciseName(e.exerciseId, names[e.exerciseId])).join(" / ")}
                     </span>
                   </Link>
                 </li>
