@@ -13,6 +13,18 @@ model User {
   passwordHash String
   workouts     Workout[]
   exercises    Exercise[]
+  draft        WorkoutDraft?
+}
+
+// The workout in progress, mirrored from the phone a moment after each change (P1-01, DD-045). One per user: the last write wins.
+// Deleted when the workout is saved or discarded. `data` is the client's active-workout object as sent.
+model WorkoutDraft {
+  userId    String   @id
+  workoutId String
+  data      Json
+  updatedAt DateTime
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 // The lifter's own name for an exercise slug ("Pull-up" for pullup), saved the first time it is logged (DD-040).

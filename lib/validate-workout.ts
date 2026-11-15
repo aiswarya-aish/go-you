@@ -14,6 +14,26 @@ export type WorkoutBody = {
 const isId = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 64;
 const isDate = (v: unknown) => typeof v === "string" && !Number.isNaN(Date.parse(v));
 
+// A workout in progress as the phone keeps it (P1-01): the save checks plus whose it is. Exercises may have no sets yet.
+export type DraftBody = {
+  workout: { id: string; userId: string; startedAt: string };
+  title?: string;
+  exercises: WorkoutBody["exercises"];
+  sets: WorkoutBody["sets"];
+};
+
+export function validateDraft(body: unknown, userId: string): string | null {
+  const d = body as Partial<DraftBody> | null;
+  if (d?.workout?.userId !== userId) return "Not your workout";
+  if (d.title != null && (typeof d.title !== "string" || d.title.length > 64)) return "Invalid title";
+  // Same rules as a save, so a draft can always be saved later (order is checked as the list position).
+  return validateWorkout({
+    workout: { id: d.workout.id, startedAt: d.workout.startedAt, endedAt: d.workout.startedAt },
+    exercises: Array.isArray(d.exercises) ? d.exercises.map((e, order) => ({ ...e, order })) : d.exercises,
+    sets: d.sets,
+  });
+}
+
 // Returns an error message, or null when the body is a valid workout.
 export function validateWorkout(body: unknown): string | null {
   const b = body as Partial<WorkoutBody> | null;

@@ -13,6 +13,7 @@ import SetRow from "@/components/SetRow";
 import StatGrid from "@/components/StatGrid";
 import RestTimer from "@/components/RestTimer";
 import { useNow } from "@/lib/useNow";
+import { useDraftSync } from "@/lib/useDraftSync";
 import { formatClock } from "@/lib/time";
 
 export type Receipt = { duration: string; sets: number; volume: string; unit: Unit; prs: { name: string; gain: string }[] };
@@ -23,9 +24,11 @@ const buzz = (pattern: number | number[]) => navigator.vibrate?.(pattern);
 export default function Logger({
   history,
   onSaved,
+  onSavedElsewhere,
 }: {
   history: ExerciseHistory;
   onSaved: (receipt: Receipt) => void;
+  onSavedElsewhere: () => void;
 }) {
   const router = useRouter();
   const active = useWorkoutStore((s) => s.activeWorkout)!;
@@ -72,6 +75,12 @@ export default function Logger({
   // Rest counts from the newest set (sets are kept in time order).
   const lastSetAt = active.sets.at(-1)?.createdAt;
   useWakeLock();
+  // Saved from another device while this one still had it open: let it go, say why, and show the fresh Train.
+  const synced = useDraftSync(active, () => {
+    onSavedElsewhere();
+    endWorkout();
+    router.refresh();
+  });
 
   // The page lands on an exercise that was just added or moved, and its header flashes once (DD-043).
   function landOn(id: string, then?: () => void) {
@@ -159,11 +168,16 @@ export default function Logger({
   }
 
   return (
-    <section className="space-y-8">
+    <section className="space-y-6">
       {/* Workout bar (+ rest strip once a set is logged): where am I, how long, how much, and the way out. */}
       <div className="sticky top-0 z-30 -mx-4 md:mx-0">
         <div className="flex h-[var(--tap-lg)] items-center gap-3 bg-[var(--fg)] px-4 text-[var(--bg)]">
           <span className="min-w-0 flex-1 truncate text-sm font-bold uppercase tracking-[0.08em]">{active.title ?? "Workout"}</span>
+          {/* Shown only when something is wrong: the latest sets have not reached the server yet (they are safe on the phone). */}
+          <span role="status" className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">
+            {synced ? "" : "Offline"}
+            <span className="sr-only">{synced ? "" : ". Your sets are kept on this phone and sync when you are back online."}</span>
+          </span>
           <WorkoutClock startedAt={active.workout.startedAt} />
           <span className="text-xs font-semibold tabular">
             {active.sets.length} {active.sets.length === 1 ? "SET" : "SETS"}
@@ -196,7 +210,7 @@ export default function Logger({
         </div>
       </div>
 
-      <div className="space-y-10">
+      <div className="space-y-8">
         {active.exercises.map((ex, i) => (
           <ExerciseBlock
             key={ex.id}
@@ -357,6 +371,8 @@ export default function Logger({
               type="button"
               onClick={() => {
                 if (!confirmDiscard) return setConfirmDiscard(true);
+                // The server's copy goes too, so no other device offers to resume it (best effort: offline, it ages out after a day).
+                fetch(`/api/draft?workout=${active.workout.id}`, { method: "DELETE" }).catch(() => {});
                 endWorkout();
                 window.scrollTo(0, 0);
               }}
@@ -438,6 +454,7 @@ function ExerciseBlock({
   onRemoveExercise: () => void;
 }) {
   const addSet = useWorkoutStore((s) => s.addSet);
+  const setExerciseDone = useWorkoutStore((s) => s.setExerciseDone);
   const [tools, setTools] = useState(false);
   // Pre-fill from the last set today, else from last session (converted to the current unit).
   const seed = sets.at(-1) ?? last?.[0];
@@ -513,28 +530,53 @@ function ExerciseBlock({
         </ol>
       )}
 
-      <form onSubmit={log} className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField id={`reps-${exercise.id}`} label="Reps" value={reps} onChange={setReps} step={1} min={1} large />
-          <NumberField
-            id={`weight-${exercise.id}`}
-            label={`Weight · ${unit}`}
-            value={weight}
-            onChange={setWeight}
-            step={unit === "kg" ? 2.5 : 5}
-            decimal
-            large
-          />
-        </div>
-        <button type="submit" className="btn btn-primary btn-lg w-full">
-          Log set
+      {/* Done folds the inputs away (the sets stay, still editable); one quiet row brings them back. Saves a screen of
+          scrolling per finished exercise. Adding a new exercise folds the earlier ones automatically. */}
+      {exercise.done ? (
+        <button
+          type="button"
+          onClick={() => setExerciseDone(exercise.id, false)}
+          aria-label={`Log another set of ${exercise.label}`}
+          className="press label -mt-2 flex min-h-[var(--tap)] w-full items-center text-[var(--fg)]"
+        >
+          + Another set
         </button>
-        {error && (
-          <p role="alert" className="text-sm text-[var(--danger)]">
-            {error}
-          </p>
-        )}
-      </form>
+      ) : (
+        <form onSubmit={log} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField id={`reps-${exercise.id}`} label="Reps" value={reps} onChange={setReps} step={1} min={1} large />
+            <NumberField
+              id={`weight-${exercise.id}`}
+              label={`Weight · ${unit}`}
+              value={weight}
+              onChange={setWeight}
+              step={unit === "kg" ? 2.5 : 5}
+              decimal
+              large
+            />
+          </div>
+          <div className={`grid gap-3 ${sets.length ? "grid-cols-[1fr_auto]" : ""}`}>
+            <button type="submit" className="btn btn-primary btn-lg w-full">
+              Log set
+            </button>
+            {sets.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setExerciseDone(exercise.id, true)}
+                aria-label={`Done with ${exercise.label}, hide its inputs`}
+                className="btn btn-lg px-5"
+              >
+                Done
+              </button>
+            )}
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-[var(--danger)]">
+              {error}
+            </p>
+          )}
+        </form>
+      )}
     </article>
   );
 }
