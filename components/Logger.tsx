@@ -30,16 +30,18 @@ export default function Logger({
   const router = useRouter();
   const active = useWorkoutStore((s) => s.activeWorkout)!;
   const unit = useWorkoutStore((s) => s.unit);
-  const { setUnit, addExercise, endWorkout, removeSet, restoreSet } = useWorkoutStore.getState();
+  const { setUnit, addExercise, endWorkout, removeSet, restoreSet, removeExercise, restoreExercise, moveExercise } = useWorkoutStore.getState();
 
   const [finishing, setFinishing] = useState(false);
   const sheetTitle = useRef<HTMLHeadingElement>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const [undo, setUndo] = useState<SetEntry | null>(null);
+  // One undo for anything removed (a set or a whole exercise): what it says, and how to put it back.
+  const [undo, setUndo] = useState<{ key: string; label: string; restore: () => void } | null>(null);
   const [announce, setAnnounce] = useState("");
   const [lastLogged, setLastLogged] = useState<string | null>(null);
+  const [landed, setLanded] = useState<string | null>(null); // the exercise added or moved last, so its block can flash on arrival
 
   useEffect(() => {
     if (!undo) return;
@@ -71,14 +73,36 @@ export default function Logger({
   const lastSetAt = active.sets.at(-1)?.createdAt;
   useWakeLock();
 
-  // Brings the new exercise into view. Only a keyboard pick moves focus to its reps; a tap leaves the keyboard closed.
+  // The page lands on an exercise that was just added or moved, and its header flashes once (DD-043).
+  function landOn(id: string, then?: () => void) {
+    setLanded(id);
+    const smooth = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+    const land = () => document.getElementById(`exercise-${id}`)?.scrollIntoView({ block: "start", behavior: smooth });
+    requestAnimationFrame(() => {
+      land();
+      then?.();
+    });
+    // shortcut: a closing phone keyboard can cancel the first scroll, so it lands again once the screen has settled (350ms); no-op if already there.
+    setTimeout(land, 350);
+  }
+
+  // A pick is felt (buzz) and seen (landing + flash); screen readers hear it from the picker.
+  // Only a keyboard pick moves focus to its reps; a tap leaves the keyboard closed (DD-042).
   function handleAdd(exerciseId: string, label: string, viaKeyboard: boolean) {
     const id = addExercise(exerciseId, label);
-    requestAnimationFrame(() => {
-      const input = document.getElementById(`reps-${id}`);
-      input?.scrollIntoView({ block: "center", behavior: "smooth" });
-      if (viaKeyboard) input?.focus({ preventScroll: true });
-    });
+    if (!id) return;
+    buzz(8);
+    landOn(id, () => viaKeyboard && document.getElementById(`reps-${id}`)?.focus({ preventScroll: true }));
+  }
+
+  function handleMove(id: string, by: -1 | 1) {
+    moveExercise(id, by);
+    landOn(id);
+  }
+
+  function handleRemoveExercise(id: string) {
+    const removed = removeExercise(id);
+    if (removed) setUndo({ key: id, label: `${removed.exercise.label} removed`, restore: () => restoreExercise(removed) });
   }
 
   function handleLogged(entry: SetEntry, pr: boolean) {
@@ -89,7 +113,7 @@ export default function Logger({
 
   function handleRemove(id: string) {
     const removed = removeSet(id);
-    if (removed) setUndo(removed);
+    if (removed) setUndo({ key: id, label: "Set removed", restore: () => restoreSet(removed) });
   }
 
   async function save() {
@@ -173,7 +197,7 @@ export default function Logger({
       </div>
 
       <div className="space-y-10">
-        {active.exercises.map((ex) => (
+        {active.exercises.map((ex, i) => (
           <ExerciseBlock
             key={ex.id}
             exercise={ex}
@@ -183,8 +207,13 @@ export default function Logger({
             bestKg={history.bestE1rmKg[ex.exerciseId]}
             unit={unit}
             lastLogged={lastLogged}
+            arriving={ex.id === landed}
+            first={i === 0}
+            lastInList={i === active.exercises.length - 1}
             onLogged={handleLogged}
             onRemove={handleRemove}
+            onMove={(by) => handleMove(ex.id, by)}
+            onRemoveExercise={() => handleRemoveExercise(ex.id)}
           />
         ))}
       </div>
@@ -200,11 +229,11 @@ export default function Logger({
       {undo && (
         <div className="fixed inset-x-0 bottom-[calc(var(--tap-lg)+env(safe-area-inset-bottom))] z-40 bg-[var(--fg)] text-[var(--bg)] md:bottom-0 md:left-[220px]">
           <div className="flex h-[var(--tap-lg)] items-center justify-between px-4">
-            <span className="text-xs font-semibold uppercase tracking-[0.16em]">Set removed</span>
+            <span className="min-w-0 truncate pr-3 text-xs font-semibold uppercase tracking-[0.16em]">{undo.label}</span>
             <button
               type="button"
               onClick={() => {
-                restoreSet(undo);
+                undo.restore();
                 setUndo(null);
               }}
               className="press h-10 bg-[var(--bg)] px-4 text-xs font-bold uppercase tracking-[0.12em] text-[var(--fg)]"
@@ -212,7 +241,7 @@ export default function Logger({
               Undo
             </button>
           </div>
-          <div key={undo.id} className="drain h-px bg-[var(--bg)]" />
+          <div key={undo.key} className="drain h-px bg-[var(--bg)]" />
         </div>
       )}
 
@@ -385,8 +414,13 @@ function ExerciseBlock({
   bestKg,
   unit,
   lastLogged,
+  arriving,
+  first,
+  lastInList,
   onLogged,
   onRemove,
+  onMove,
+  onRemoveExercise,
 }: {
   exercise: ExerciseInstance;
   sets: SetEntry[];
@@ -395,10 +429,16 @@ function ExerciseBlock({
   bestKg?: number;
   unit: Unit;
   lastLogged: string | null;
+  arriving: boolean;
+  first: boolean;
+  lastInList: boolean;
   onLogged: (entry: SetEntry, pr: boolean) => void;
   onRemove: (id: string) => void;
+  onMove: (by: -1 | 1) => void;
+  onRemoveExercise: () => void;
 }) {
   const addSet = useWorkoutStore((s) => s.addSet);
+  const [tools, setTools] = useState(false);
   // Pre-fill from the last set today, else from last session (converted to the current unit).
   const seed = sets.at(-1) ?? last?.[0];
   const seedWeight = seed ? Math.round(fromKg(toKg(seed.weight, seed.unit), unit) * 2) / 2 : undefined;
@@ -417,13 +457,53 @@ function ExerciseBlock({
   }
 
   return (
-    <article className="space-y-4" aria-labelledby={`ex-${exercise.id}`}>
-      <header className="space-y-1 border-t-2 border-[var(--fg)] pt-4">
-        <h2 id={`ex-${exercise.id}`} className="text-xl font-bold uppercase leading-tight tracking-[-0.01em]">
-          {exercise.label}
-        </h2>
-        <p className="label">{last ? `Last · ${sessionSummary(last)}` : "First time"}</p>
+    <article id={`exercise-${exercise.id}`} className="scroll-mt-36 space-y-4" aria-labelledby={`ex-${exercise.id}`}>
+      <header className="border-t-2 border-[var(--fg)] pt-2">
+        {/* Full-bleed, so the arrival flash reads like the picker row that was tapped. */}
+        <div className={`-mx-4 -mb-2 grid grid-cols-[1fr_auto] items-start gap-3 px-4 py-2 md:mx-0 md:px-0 ${arriving ? "arrive" : ""}`}>
+          <div className="min-w-0 space-y-1">
+            <h2 id={`ex-${exercise.id}`} className="text-xl font-bold uppercase leading-tight tracking-[-0.01em]">
+              {exercise.label}
+            </h2>
+            <p className="label">{last ? `Last · ${sessionSummary(last)}` : "First time"}</p>
+          </div>
+          {/* Order and removal are rare: one quiet control, so the block stays clean while logging. */}
+          <button
+            type="button"
+            aria-expanded={tools}
+            aria-controls={`tools-${exercise.id}`}
+            aria-label={`${tools ? "Done" : "Edit"} ${exercise.label}`}
+            onClick={() => setTools((t) => !t)}
+            className="press label -mr-2 -mt-2 min-h-[var(--tap)] px-2 text-[var(--fg)]"
+          >
+            {tools ? "Done" : "Edit"}
+          </button>
+        </div>
       </header>
+
+      {tools && (
+        <div id={`tools-${exercise.id}`} role="group" aria-label={`Edit ${exercise.label}`} className="grid grid-cols-3 gap-px border border-[var(--control)] bg-[var(--control)]">
+          {(
+            [
+              ["Move up", () => onMove(-1), first],
+              ["Move down", () => onMove(1), lastInList],
+              ["Remove", onRemoveExercise, false],
+            ] as const
+          ).map(([label, act, off]) => (
+            <button
+              key={label}
+              type="button"
+              disabled={off}
+              onClick={act}
+              className={`press h-11 bg-[var(--bg)] text-xs font-bold uppercase tracking-[0.12em] disabled:text-[var(--divider)] ${
+                label === "Remove" ? "text-[var(--danger)]" : ""
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {sets.length > 0 && (
         <ol className="border-b border-[var(--divider)]">
