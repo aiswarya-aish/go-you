@@ -221,7 +221,7 @@ function SavedReceipt({ receipt, onDismiss }: { receipt: Receipt; onDismiss: () 
               >
                 <span className="truncate text-base font-bold uppercase tracking-[-0.01em]">{p.name}</span>
                 <span className="shrink-0 text-sm font-bold tabular">
-                  {p.gain} <span className="text-[10px] font-semibold tracking-[0.16em] opacity-70">EST. 1RM</span>
+                  {p.value} <span className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{p.what}</span>
                 </span>
               </li>
             ))}

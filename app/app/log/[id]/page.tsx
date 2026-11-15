@@ -7,9 +7,10 @@ import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { bestE1rmByExercise, getExerciseNames } from "@/lib/history";
+import { bestsByExercise, getExerciseNames } from "@/lib/history";
+import { PR_LABEL, prKinds } from "@/lib/prs";
 import { formatDayLabel, formatIn, formatTime, safeTimeZone, TZ_COOKIE } from "@/lib/time";
-import { durationMinutes, e1rmKg, exerciseName, formatLoad, formatNumber, prFlags, toKg } from "@/lib/lift";
+import { durationMinutes, e1rmKg, exerciseName, formatLoad, formatNumber, toKg } from "@/lib/lift";
 import StatGrid from "@/components/StatGrid";
 
 export const metadata: Metadata = { title: "Workout" };
@@ -30,7 +31,7 @@ export default async function WorkoutDetailPage({ params }: { params: Promise<{ 
   if (!workout) notFound();
 
   // Bests from earlier workouts, so this workout's PR sets can be marked.
-  const bestBefore = await bestE1rmByExercise(userId, workout.startedAt);
+  const bestBefore = await bestsByExercise(userId, workout.startedAt);
   const exercises = workout.exercises.filter((e) => e.sets.length > 0);
   const sets = exercises.flatMap((e) => e.sets);
   const volumeKg = sets.reduce((n, s) => n + toKg(s.weight, s.unit) * s.reps, 0);
@@ -59,7 +60,7 @@ export default async function WorkoutDetailPage({ params }: { params: Promise<{ 
       />
 
       {exercises.map((exercise) => {
-        const prs = prFlags(exercise.sets, bestBefore[exercise.exerciseId]);
+        const prs = prKinds(exercise.sets, bestBefore[exercise.exerciseId]);
         const topE1rm = Math.max(...exercise.sets.map((s) => e1rmKg(s.weight, s.reps, s.unit)));
         return (
           <article key={exercise.id} className="space-y-3">
@@ -76,7 +77,7 @@ export default async function WorkoutDetailPage({ params }: { params: Promise<{ 
                   <span className={`pl-1 text-xs font-semibold tabular ${prs[i] ? "" : "text-[var(--muted)]"}`}>{i + 1}</span>
                   <span className="flex items-center gap-3 text-base font-semibold tabular">
                     {s.reps} × {formatLoad(s.weight, s.unit)}
-                    {prs[i] && <span className="tag">PR</span>}
+                    {prs[i] && <span className="tag">{PR_LABEL[prs[i].kind]}</span>}
                   </span>
                 </li>
               ))}
