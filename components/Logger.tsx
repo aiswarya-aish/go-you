@@ -40,6 +40,7 @@ export default function Logger({
   const [undo, setUndo] = useState<SetEntry | null>(null);
   const [announce, setAnnounce] = useState("");
   const [lastLogged, setLastLogged] = useState<string | null>(null);
+  const [justAdded, setJustAdded] = useState<string | null>(null); // the exercise picked last, so its block can flash on arrival
 
   useEffect(() => {
     if (!undo) return;
@@ -71,14 +72,21 @@ export default function Logger({
   const lastSetAt = active.sets.at(-1)?.createdAt;
   useWakeLock();
 
-  // Brings the new exercise into view. Only a keyboard pick moves focus to its reps; a tap leaves the keyboard closed.
+  // A pick is felt (buzz), seen (the page lands on the new exercise, whose header flashes) and said (the picker's status line).
+  // Only a keyboard pick moves focus to its reps; a tap leaves the keyboard closed (DD-042).
   function handleAdd(exerciseId: string, label: string, viaKeyboard: boolean) {
     const id = addExercise(exerciseId, label);
+    if (!id) return;
+    setJustAdded(id);
+    buzz(8);
+    const smooth = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+    const land = () => document.getElementById(`exercise-${id}`)?.scrollIntoView({ block: "start", behavior: smooth });
     requestAnimationFrame(() => {
-      const input = document.getElementById(`reps-${id}`);
-      input?.scrollIntoView({ block: "center", behavior: "smooth" });
-      if (viaKeyboard) input?.focus({ preventScroll: true });
+      land();
+      if (viaKeyboard) document.getElementById(`reps-${id}`)?.focus({ preventScroll: true });
     });
+    // shortcut: a closing phone keyboard can cancel the first scroll, so it lands again once the screen has settled (350ms); no-op if already there.
+    setTimeout(land, 350);
   }
 
   function handleLogged(entry: SetEntry, pr: boolean) {
@@ -183,6 +191,7 @@ export default function Logger({
             bestKg={history.bestE1rmKg[ex.exerciseId]}
             unit={unit}
             lastLogged={lastLogged}
+            arriving={ex.id === justAdded}
             onLogged={handleLogged}
             onRemove={handleRemove}
           />
@@ -385,6 +394,7 @@ function ExerciseBlock({
   bestKg,
   unit,
   lastLogged,
+  arriving,
   onLogged,
   onRemove,
 }: {
@@ -395,6 +405,7 @@ function ExerciseBlock({
   bestKg?: number;
   unit: Unit;
   lastLogged: string | null;
+  arriving: boolean;
   onLogged: (entry: SetEntry, pr: boolean) => void;
   onRemove: (id: string) => void;
 }) {
@@ -417,12 +428,15 @@ function ExerciseBlock({
   }
 
   return (
-    <article className="space-y-4" aria-labelledby={`ex-${exercise.id}`}>
-      <header className="space-y-1 border-t-2 border-[var(--fg)] pt-4">
-        <h2 id={`ex-${exercise.id}`} className="text-xl font-bold uppercase leading-tight tracking-[-0.01em]">
-          {exercise.label}
-        </h2>
-        <p className="label">{last ? `Last · ${sessionSummary(last)}` : "First time"}</p>
+    <article id={`exercise-${exercise.id}`} className="scroll-mt-36 space-y-4" aria-labelledby={`ex-${exercise.id}`}>
+      <header className="border-t-2 border-[var(--fg)] pt-2">
+        {/* Full-bleed, so the arrival flash reads like the picker row that was tapped. */}
+        <div className={`-mx-4 -mb-2 space-y-1 px-4 py-2 md:mx-0 md:px-0 ${arriving ? "arrive" : ""}`}>
+          <h2 id={`ex-${exercise.id}`} className="text-xl font-bold uppercase leading-tight tracking-[-0.01em]">
+            {exercise.label}
+          </h2>
+          <p className="label">{last ? `Last · ${sessionSummary(last)}` : "First time"}</p>
+        </div>
       </header>
 
       {sets.length > 0 && (

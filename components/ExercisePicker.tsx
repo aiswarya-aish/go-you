@@ -23,6 +23,7 @@ export default function ExercisePicker({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1); // -1: no row chosen (an empty field never adds by itself)
+  const [added, setAdded] = useState<string | null>(null); // the last pick, confirmed under the field
   const input = useRef<HTMLInputElement>(null);
 
   const typed = query.trim();
@@ -45,6 +46,7 @@ export default function ExercisePicker({
     const keepTyping = viaKeyboard && !matchMedia("(pointer: coarse)").matches;
     if (!keepTyping) input.current?.blur();
     onAdd(item.id, item.name, keepTyping);
+    setAdded(item.name);
     setQuery("");
     setActive(-1);
     setOpen(false);
@@ -91,6 +93,7 @@ export default function ExercisePicker({
           value={query}
           maxLength={64}
           onChange={(e) => {
+            setAdded(null);
             setQuery(e.target.value);
             setActive(0);
             setOpen(true);
@@ -136,9 +139,10 @@ export default function ExercisePicker({
         </div>
       )}
       {open && typed && !items.length && <p className="text-sm text-[var(--muted)]">Use letters or numbers in the name.</p>}
-      {/* Picks stay findable by screen readers as the list changes. */}
+      {/* Screen readers only: after a pick it says what was added (sighted users see the page land on it);
+          while the list is open it says how many options there are. Nothing visible, to keep Train clean. */}
       <p role="status" aria-live="polite" className="sr-only">
-        {shown ? `${items.length} ${items.length === 1 ? "option" : "options"}` : ""}
+        {added && !shown ? `Added ${added}` : shown ? `${items.length} ${items.length === 1 ? "option" : "options"}` : ""}
       </p>
     </form>
   );

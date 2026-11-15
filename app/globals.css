@@ -109,6 +109,11 @@ output,
   animation: stamp 280ms var(--ease-out);
 }
 
+/* A picked exercise: its header flashes inverted once the page has landed on it (the scroll takes ~300ms). */
+.arrive {
+  animation: stamp 900ms var(--ease-out) 300ms;
+}
+
 /* Saved receipt: each new best rises into place once, in order (60ms apart). Rare by design, so it can be felt. */
 @keyframes rise {
   from {
@@ -173,6 +178,10 @@ output,
   }
   .stamp {
     animation-duration: 200ms;
+  }
+  .arrive {
+    animation-duration: 400ms;
+    animation-delay: 0ms;
   }
   .rise {
     animation-name: fade;
