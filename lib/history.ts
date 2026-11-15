@@ -5,6 +5,7 @@ import { workoutsTag } from "@/lib/stats";
 import { exerciseName, KG_PER_LB } from "@/lib/lift";
 import { buildTemplates, TEMPLATE_UNLOCK_SESSIONS, type ProgramTemplate } from "@/lib/templates";
 import { bestsFrom, type Bests } from "@/lib/prs";
+import type { LiftSession } from "@/lib/lift-history";
 
 export type LastSet = { reps: number; weight: number; unit: string };
 export type ExerciseHistory = {
@@ -66,6 +67,30 @@ async function load(userId: string): Promise<ExerciseHistory> {
 
 export const getExerciseHistory = (userId: string) =>
   unstable_cache(() => load(userId), ["history", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
+
+// Every session of one lift, oldest first (P2-02 lift page). One joined query; an exercise done twice in a workout is one session.
+async function loadLift(userId: string, slug: string): Promise<LiftSession[]> {
+  const rows = await prisma.exerciseInstance.findMany({
+    where: { exerciseId: slug, workout: { userId } },
+    orderBy: [{ workout: { startedAt: "asc" } }, { order: "asc" }],
+    relationLoadStrategy: "join",
+    select: {
+      workoutId: true,
+      workout: { select: { startedAt: true } },
+      sets: { orderBy: { createdAt: "asc" }, select: { id: true, reps: true, weight: true, unit: true } },
+    },
+  });
+  const sessions: LiftSession[] = [];
+  for (const r of rows) {
+    const last = sessions.at(-1);
+    if (last?.workoutId === r.workoutId) last.sets.push(...r.sets);
+    else sessions.push({ workoutId: r.workoutId, startedAt: r.workout.startedAt.toISOString(), sets: r.sets });
+  }
+  return sessions;
+}
+
+export const getLiftSessions = (userId: string, slug: string) =>
+  unstable_cache(() => loadLift(userId, slug), ["lift", userId, slug], { tags: [workoutsTag(userId)], revalidate: 3600 })();
 
 export type TemplateProgress = { sessions: number; templates: ProgramTemplate[] };
 
