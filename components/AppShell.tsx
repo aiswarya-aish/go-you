@@ -64,12 +64,7 @@ export default function AppShell({ children, user }: { children: React.ReactNode
         Skip to content
       </a>
 
-      {/* Mobile: brand bar. Navigation lives at the bottom, under the thumb. */}
-      {/* During a workout the workout bar is the header: the brand steps aside so the bar sits at the very top. */}
-      <header className={`${live ? "hidden" : "flex"} h-12 items-center border-b border-[var(--divider)] px-4 md:hidden`}>
-        <span className="text-sm font-bold tracking-wide">GO—YOU</span>
-      </header>
-
+      {/* Mobile has no brand bar (DD-047, 2026-11-15): each page's own title is the header; navigation is the tab bar under the thumb. */}
       <aside className="hidden flex-col gap-8 border-r border-[var(--divider)] p-5 md:flex">
         <span className="text-sm font-bold tracking-wide">GO—YOU</span>
         <nav aria-label="Main">
@@ -81,7 +76,7 @@ export default function AppShell({ children, user }: { children: React.ReactNode
         </div>
       </aside>
 
-      <main id="main" className="px-4 pt-6 pb-[calc(var(--tap-lg)+env(safe-area-inset-bottom)+2rem)] md:p-8">
+      <main id="main" className="px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(var(--tap-lg)+env(safe-area-inset-bottom)+2rem)] md:p-8">
         {children}
       </main>
 
