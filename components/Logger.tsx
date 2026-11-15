@@ -33,7 +33,7 @@ export default function Logger({
   const router = useRouter();
   const active = useWorkoutStore((s) => s.activeWorkout)!;
   const unit = useWorkoutStore((s) => s.unit);
-  const { setUnit, addExercise, endWorkout, removeSet, restoreSet, removeExercise, restoreExercise, moveExercise } = useWorkoutStore.getState();
+  const { addExercise, endWorkout, removeSet, restoreSet, removeExercise, restoreExercise, moveExercise } = useWorkoutStore.getState();
 
   const [finishing, setFinishing] = useState(false);
   const sheetTitle = useRef<HTMLHeadingElement>(null);
@@ -170,7 +170,9 @@ export default function Logger({
   return (
     <section className="space-y-6">
       {/* Workout bar (+ rest strip once a set is logged): where am I, how long, how much, and the way out. */}
-      <div className="sticky top-0 z-30 -mx-4 md:mx-0">
+      {/* Flush with the top of the page (cancels main's top padding): no white band above the bar. */}
+      <div className="sticky top-0 z-30 -mx-4 -mt-6 md:mx-0 md:mt-0">
+        <h1 className="sr-only">Workout in progress</h1>
         <div className="flex h-[var(--tap-lg)] items-center gap-3 bg-[var(--fg)] px-4 text-[var(--bg)]">
           <span className="min-w-0 flex-1 truncate text-sm font-bold uppercase tracking-[0.08em]">{active.title ?? "Workout"}</span>
           {/* Shown only when something is wrong: the latest sets have not reached the server yet (they are safe on the phone). */}
@@ -191,23 +193,6 @@ export default function Logger({
           </button>
         </div>
         {lastSetAt && <RestTimer lastSetAt={lastSetAt} />}
-      </div>
-
-      <div className="flex items-center justify-between">
-        <h1 className="label">Workout in progress</h1>
-        <div role="group" aria-label="Weight unit" className="grid grid-cols-2 border border-[var(--control)]">
-          {(["kg", "lb"] as const).map((u) => (
-            <button
-              key={u}
-              type="button"
-              aria-pressed={unit === u}
-              onClick={() => setUnit(u)}
-              className={`press h-9 w-12 text-xs font-bold uppercase ${unit === u ? "bg-[var(--fg)] text-[var(--bg)]" : ""}`}
-            >
-              {u}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="space-y-8">
@@ -387,6 +372,34 @@ export default function Logger({
   );
 }
 
+// kg / lb, next to the weight it changes (one remembered unit for the whole app). Two small letters, the current one inverted;
+// each has a 32px-tall hit area that hangs into the row's spacing, so the label row keeps its height.
+function UnitSwitch() {
+  const unit = useWorkoutStore((s) => s.unit);
+  const setUnit = useWorkoutStore((s) => s.setUnit);
+  return (
+    <div role="group" aria-label="Weight unit" className="-my-2 flex">
+      {(["kg", "lb"] as const).map((u) => (
+        <button
+          key={u}
+          type="button"
+          aria-pressed={unit === u}
+          onClick={() => setUnit(u)}
+          className="press flex h-8 w-9 items-center justify-center"
+        >
+          <span
+            className={`px-1 text-[10px] font-bold uppercase leading-4 tracking-[0.12em] ${
+              unit === u ? "bg-[var(--fg)] text-[var(--bg)]" : "text-[var(--muted)]"
+            }`}
+          >
+            {u}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function WorkoutClock({ startedAt }: { startedAt: string }) {
   const now = useNow();
   return (
@@ -474,7 +487,7 @@ function ExerciseBlock({
   }
 
   return (
-    <article id={`exercise-${exercise.id}`} className="scroll-mt-36 space-y-4" aria-labelledby={`ex-${exercise.id}`}>
+    <article id={`exercise-${exercise.id}`} className="scroll-mt-32 space-y-4" aria-labelledby={`ex-${exercise.id}`}>
       <header className="border-t-2 border-[var(--fg)] pt-2">
         {/* Full-bleed, so the arrival flash reads like the picker row that was tapped. */}
         <div className={`-mx-4 -mb-2 grid grid-cols-[1fr_auto] items-start gap-3 px-4 py-2 md:mx-0 md:px-0 ${arriving ? "arrive" : ""}`}>
@@ -547,7 +560,9 @@ function ExerciseBlock({
             <NumberField id={`reps-${exercise.id}`} label="Reps" value={reps} onChange={setReps} step={1} min={1} large />
             <NumberField
               id={`weight-${exercise.id}`}
-              label={`Weight · ${unit}`}
+              label="Weight"
+              inputLabel={`Weight · ${unit}`}
+              aside={<UnitSwitch />}
               value={weight}
               onChange={setWeight}
               step={unit === "kg" ? 2.5 : 5}

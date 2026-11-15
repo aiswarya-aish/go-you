@@ -25,21 +25,21 @@ export default function RestTimer({ lastSetAt }: { lastSetAt: string }) {
     wasDone.current = done;
   }, [done]);
 
-  const ink = done ? "bg-[var(--fg)] text-[var(--bg)]" : "bg-[var(--bg)] text-[var(--fg)]";
-
+  // A quiet white strip under the black bar (revised 2026-11-15): the only thing that inverts is what changed. When rest is over,
+  // "GO" becomes a black block (plus the buzz); the targets are plain numbers with the chosen one inverted, like the kg/lb switch.
   return (
-    <div className={`flex h-[var(--tap-lg)] items-center gap-4 border-b border-[var(--fg)] px-4 ${ink} ${done ? "border-t border-t-[var(--muted)]" : ""}`}>
-      <div className="min-w-0 flex-1 leading-none">
-        <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{done ? "Rest done" : "Rest left"}</span>
+    <div className="flex h-12 items-center gap-3 border-b border-[var(--divider)] bg-[var(--bg)] px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">{done ? "Rest done" : "Rest"}</span>
         {done ? (
-          <span className="mt-1 block text-2xl font-bold uppercase tracking-[-0.02em]">Go</span>
+          <span className="bg-[var(--fg)] px-1.5 text-xl font-bold uppercase leading-7 tracking-[-0.01em] text-[var(--bg)]">Go</span>
         ) : (
-          <time role="timer" aria-label="Rest remaining" className="mt-1 block text-2xl font-bold tracking-[-0.02em] tabular">
+          <time role="timer" aria-label="Rest remaining" className="text-xl font-bold leading-7 tracking-[-0.02em] tabular">
             {formatClock(Math.ceil(remainingMs / 1000) * 1000) /* countdowns round up: a fresh 2:00 reads 2:00 */}
           </time>
         )}
       </div>
-      <div role="group" aria-label="Rest target" className="grid grid-cols-4 gap-px border border-current bg-current">
+      <div role="group" aria-label="Rest target" className="-mr-2 flex">
         {REST_TARGETS.map((t) => {
           const on = t === target;
           return (
@@ -49,9 +49,11 @@ export default function RestTimer({ lastSetAt }: { lastSetAt: string }) {
               aria-pressed={on}
               aria-label={`Rest ${formatClock(t * 1000)}`}
               onClick={() => setTarget(t)}
-              className={`press h-11 w-11 text-xs font-bold tabular ${on === done ? "bg-[var(--bg)] text-[var(--fg)]" : "bg-[var(--fg)] text-[var(--bg)]"}`}
+              className="press flex h-11 w-11 items-center justify-center"
             >
-              {formatClock(t * 1000)}
+              <span className={`px-1 text-xs font-bold leading-5 tabular ${on ? "bg-[var(--fg)] text-[var(--bg)]" : "text-[var(--muted)]"}`}>
+                {formatClock(t * 1000)}
+              </span>
             </button>
           );
         })}
