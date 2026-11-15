@@ -25,7 +25,12 @@ interface WorkoutState {
   updateSet: (setId: string, updates: { reps?: number; weight?: number }) => void;
   removeSet: (setId: string) => SetEntry | undefined;
   restoreSet: (entry: SetEntry) => void;
+  removeExercise: (id: string) => RemovedExercise | undefined;
+  restoreExercise: (removed: RemovedExercise) => void;
+  moveExercise: (id: string, by: -1 | 1) => void;
 }
+
+export type RemovedExercise = { exercise: ExerciseInstance; sets: SetEntry[]; index: number };
 
 const generateId = () => crypto.randomUUID();
 const byTime = (a: SetEntry, b: SetEntry) => a.createdAt.localeCompare(b.createdAt);
@@ -84,6 +89,33 @@ export const useWorkoutStore = create<WorkoutState>()(
         },
 
         restoreSet: (entry) => patch((w) => ({ sets: [...w.sets, entry].sort(byTime) })),
+
+        // Removes an exercise with its sets; the snapshot puts both back where they were (UNDO).
+        removeExercise: (id) => {
+          const w = get().activeWorkout;
+          const index = w ? w.exercises.findIndex((e) => e.id === id) : -1;
+          if (!w || index < 0) return undefined;
+          const removed = { exercise: w.exercises[index], sets: w.sets.filter((s) => s.exerciseInstanceId === id), index };
+          patch((w) => ({ exercises: w.exercises.filter((e) => e.id !== id), sets: w.sets.filter((s) => s.exerciseInstanceId !== id) }));
+          return removed;
+        },
+
+        restoreExercise: ({ exercise, sets, index }) =>
+          patch((w) => ({
+            exercises: [...w.exercises.slice(0, index), exercise, ...w.exercises.slice(index)],
+            sets: [...w.sets, ...sets].sort(byTime),
+          })),
+
+        // Swaps an exercise with its neighbour (by = -1 up, 1 down). The saved order is the list order (Logger.save).
+        moveExercise: (id, by) =>
+          patch((w) => {
+            const i = w.exercises.findIndex((e) => e.id === id);
+            const j = i + by;
+            if (i < 0 || j < 0 || j >= w.exercises.length) return {};
+            const exercises = [...w.exercises];
+            [exercises[i], exercises[j]] = [exercises[j], exercises[i]];
+            return { exercises };
+          }),
       };
     },
     { name: "go-you.active-workout.v1", skipHydration: true },
