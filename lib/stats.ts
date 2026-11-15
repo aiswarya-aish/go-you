@@ -2,6 +2,8 @@ import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { dayIn, weekStart } from "@/lib/time";
 import { e1rmKg, toKg, type Unit } from "@/lib/lift";
+import { prKindsInRange, type Bests, type Pr } from "@/lib/prs";
+import { bestsByExercise } from "@/lib/history"; // history imports workoutsTag from here; both are only used inside functions
 
 export type Range = "7d" | "30d" | "90d" | "all";
 
@@ -16,7 +18,9 @@ const DAYS: Record<Exclude<Range, "all">, number> = { "7d": 7, "30d": 30, "90d":
 // All values in kg; the page converts to the display unit.
 async function computeStats(userId: string, range: Range, tz: string) {
   const since = range === "all" ? null : new Date(Date.now() - DAYS[range] * 86400000);
-  const workouts = await prisma.workout.findMany({
+  // PRs in the range are measured against the all-time record before it (P2-01), fetched beside the range's workouts.
+  const [workouts, before] = await Promise.all([
+    prisma.workout.findMany({
     where: { userId, ...(since ? { startedAt: { gte: since } } : {}) },
     orderBy: { startedAt: "asc" },
     relationLoadStrategy: "join",
@@ -31,16 +35,19 @@ async function computeStats(userId: string, range: Range, tz: string) {
         },
       },
     },
-  });
+    }),
+    since ? bestsByExercise(userId, since) : Promise.resolve({} as Record<string, Bests | undefined>),
+  ]);
 
   const day = dayIn(tz);
   let totalVolumeKg = 0;
   let totalMinutes = 0;
   let completed = 0;
   const top = new Map<string, { sets: number; workouts: Set<string>; bestWeightKg: number; best1rmKg: number }>();
-  const best1rm = new Map<string, number>();
   const weekly = new Map<string, number>();
-  const prs: { occurredAt: string; exerciseId: string; setId: string; reps: number; weightKg: number; e1rmKg: number; prevKg: number }[] = [];
+  type RangeSet = { id: string; reps: number; weight: number; unit: string; createdAt: Date; workoutId: string };
+  const setsByExercise = new Map<string, RangeSet[]>(); // in time order, for the PR pass below
+  const prs: ({ occurredAt: string; exerciseId: string; setId: string; reps: number; weightKg: number } & Pr)[] = [];
 
   for (const w of workouts) {
     if (w.endedAt) {
@@ -60,14 +67,16 @@ async function computeStats(userId: string, range: Range, tz: string) {
         t.sets += 1;
         t.bestWeightKg = Math.max(t.bestWeightKg, kg);
         t.best1rmKg = Math.max(t.best1rmKg, e1rm);
-        const prev = best1rm.get(ex.exerciseId) ?? 0;
-        if (e1rm > prev + 1e-6) {
-          prs.push({ occurredAt: s.createdAt.toISOString(), exerciseId: ex.exerciseId, setId: s.id, reps: s.reps, weightKg: kg, e1rmKg: e1rm, prevKg: prev });
-          best1rm.set(ex.exerciseId, e1rm);
-        }
+        const list = setsByExercise.get(ex.exerciseId) ?? setsByExercise.set(ex.exerciseId, []).get(ex.exerciseId)!;
+        list.push({ ...s, workoutId: w.id });
       }
     }
   }
+
+  // Weight and rep PRs (DD-048) against the record before the range (lib/prs.ts prKindsInRange, tested).
+  for (const [exerciseId, list] of setsByExercise)
+    for (const { set: s, pr } of prKindsInRange(list, before[exerciseId]))
+      prs.push({ occurredAt: s.createdAt.toISOString(), exerciseId, setId: s.id, reps: s.reps, weightKg: toKg(s.weight, s.unit), ...pr });
 
   return {
     kpis: {

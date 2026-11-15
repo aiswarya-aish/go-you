@@ -85,7 +85,7 @@ output,
 
   /* Ruled micro tag, e.g. "PR". Takes the row's colour, so it works inverted too. */
   .tag {
-    @apply border border-current px-1.5 py-0.5 text-[10px] font-bold tracking-[0.16em];
+    @apply border border-current px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em];
   }
 
   .field {

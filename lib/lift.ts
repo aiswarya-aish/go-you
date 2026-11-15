@@ -10,18 +10,6 @@ export const fromKg = (kg: number, unit: string) => (unit === "lb" ? kg / KG_PER
 // Epley estimate of a one-rep max.
 export const e1rmKg = (weight: number, reps: number, unit: string) => toKg(weight, unit) * (1 + reps / 30);
 
-// For one exercise's sets in order: true where a set beats the best before it (all-time best, then earlier sets).
-// No history (bestKg undefined) means nothing to beat yet, so no PRs.
-export function prFlags(sets: { weight: number; reps: number; unit: string }[], bestKg: number | undefined) {
-  let best = bestKg ?? Infinity;
-  return sets.map((s) => {
-    const e = e1rmKg(s.weight, s.reps, s.unit);
-    if (e <= best + 1e-6) return false;
-    best = e;
-    return true;
-  });
-}
-
 // One rule for logging and editing a set, matching what the server accepts (validate-workout.ts), so a save is never refused later.
 export function setProblem(reps: string, weight: string): string | null {
   const r = Number(reps);

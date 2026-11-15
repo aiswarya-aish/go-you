@@ -4,20 +4,22 @@ import { useRef, useState } from "react";
 import { useWorkoutStore } from "@/state/workoutStore";
 import type { SetEntry } from "@/domain/workout";
 import { formatLoad, setProblem } from "@/lib/lift";
+import { PR_LABEL, type PrKind } from "@/lib/prs";
 
 export default function SetRow({
   set,
   index,
-  isPr,
+  pr,
   isNew,
   onRemove,
 }: {
   set: SetEntry;
   index: number;
-  isPr: boolean;
+  pr: PrKind | null; // which kind of PR this set is, if any (DD-048)
   isNew: boolean;
   onRemove: (id: string) => void;
 }) {
+  const isPr = pr !== null;
   const updateSet = useWorkoutStore((s) => s.updateSet);
   const [editing, setEditing] = useState(false);
   const [reps, setReps] = useState("");
@@ -145,11 +147,11 @@ export default function SetRow({
         <button
           type="button"
           onClick={startEdit}
-          aria-label={`Set ${n}: ${set.reps} × ${formatLoad(set.weight, set.unit)}${isPr ? ", personal record" : ""}. Edit`}
+          aria-label={`Set ${n}: ${set.reps} × ${formatLoad(set.weight, set.unit)}${pr ? `, ${PR_LABEL[pr]}` : ""}. Edit`}
           className="press flex h-12 items-center gap-3 text-left text-lg font-semibold tabular"
         >
           {set.reps} × {formatLoad(set.weight, set.unit)}
-          {isPr && <span className="tag">PR</span>}
+          {pr && <span className="tag">{PR_LABEL[pr]}</span>}
         </button>
         <button
           type="button"

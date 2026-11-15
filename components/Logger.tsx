@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useWorkoutStore } from "@/state/workoutStore";
 import type { ExerciseInstance, SetEntry } from "@/domain/workout";
 import type { ExerciseHistory } from "@/lib/history";
-import { durationMinutes, formatLoad, formatNumber, fromKg, prFlags, sessionSummary, setProblem, toKg, type Unit } from "@/lib/lift";
+import { durationMinutes, formatLoad, formatNumber, fromKg, sessionSummary, setProblem, toKg, type Unit } from "@/lib/lift";
+import { PR_LABEL, prGain, prKinds, type Bests, type Pr, type PrKind } from "@/lib/prs";
 import { sessionReport } from "@/lib/report";
 import ExercisePicker from "@/components/ExercisePicker";
 import NumberField from "@/components/NumberField";
@@ -16,7 +17,7 @@ import { useNow } from "@/lib/useNow";
 import { useDraftSync } from "@/lib/useDraftSync";
 import { formatClock } from "@/lib/time";
 
-export type Receipt = { duration: string; sets: number; volume: string; unit: Unit; prs: { name: string; gain: string }[] };
+export type Receipt = { duration: string; sets: number; volume: string; unit: Unit; prs: { name: string; value: string; what: string }[] };
 
 const minutes = (startedAt: string) => `${durationMinutes(Date.parse(startedAt), Date.now())}M`;
 const buzz = (pattern: number | number[]) => navigator.vibrate?.(pattern);
@@ -36,6 +37,7 @@ export default function Logger({
   const { addExercise, endWorkout, removeSet, restoreSet, removeExercise, restoreExercise, moveExercise } = useWorkoutStore.getState();
 
   const [finishing, setFinishing] = useState(false);
+  const [sheetUp, setSheetUp] = useState(false); // open, or still sliding away after closing
   const sheetTitle = useRef<HTMLHeadingElement>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -63,15 +65,23 @@ export default function Logger({
     if (finishing) sheetTitle.current?.focus({ preventScroll: true });
   }, [finishing]);
 
-  const flags = new Map<string, boolean>();
+  // The sheet's report stays built while it slides away (300ms, --dur-sheet), then stops. A timer, not transitionend: an
+  // open-and-close within one frame never animates, and the report would stay on for the rest of the workout.
+  useEffect(() => {
+    if (finishing) return;
+    const t = setTimeout(() => setSheetUp(false), 400);
+    return () => clearTimeout(t);
+  }, [finishing]);
+
+  const prs = new Map<string, PrKind | null>(); // set id → its PR kind (DD-048)
   for (const ex of active.exercises) {
     const sets = active.sets.filter((s) => s.exerciseInstanceId === ex.id);
-    prFlags(sets, history.bestE1rmKg[ex.exerciseId]).forEach((pr, i) => flags.set(sets[i].id, pr));
+    prKinds(sets, history.bests[ex.exerciseId]).forEach((pr, i) => prs.set(sets[i].id, pr?.kind ?? null));
   }
-  const report = sessionReport(active.exercises, active.sets, history.last, history.bestE1rmKg);
-  // A PR is always a gain: a sliver under 0.05 shows as the smallest step (+0.1), never "+0".
-  const gain = (kg: number) => `+${formatNumber(Math.max(0.1, fromKg(kg, unit)))}`;
-  const volume = `${formatNumber(Math.round(fromKg(report.volumeKg, unit)))}`;
+  // The Finish sheet is the only reader: built while it is open or sliding away, not on every logged set (it was redone, unseen, each time).
+  const report = finishing || sheetUp ? sessionReport(active.exercises, active.sets, history.last, history.bests) : null;
+  const gain = (p: Pr) => prGain(p, unit); // "+2.5" "kg heavier", "+2" "more reps" (shared with Stats)
+  const volume = report ? formatNumber(Math.round(fromKg(report.volumeKg, unit))) : "";
   // Rest counts from the newest set (sets are kept in time order).
   const lastSetAt = active.sets.at(-1)?.createdAt;
   useWakeLock();
@@ -114,9 +124,9 @@ export default function Logger({
     if (removed) setUndo({ key: id, label: `${removed.exercise.label} removed`, restore: () => restoreExercise(removed) });
   }
 
-  function handleLogged(entry: SetEntry, pr: boolean) {
+  function handleLogged(entry: SetEntry, pr: PrKind | null) {
     setLastLogged(entry.id);
-    setAnnounce(`Set logged, ${entry.reps} × ${formatLoad(entry.weight, entry.unit)}${pr ? ". Personal record." : ""}`);
+    setAnnounce(`Set logged, ${entry.reps} × ${formatLoad(entry.weight, entry.unit)}${pr ? `. ${PR_LABEL[pr]}.` : ""}`);
     buzz(pr ? [0, 30, 40, 30] : 8);
   }
 
@@ -154,7 +164,7 @@ export default function Logger({
         sets: w.sets.length,
         volume,
         unit,
-        prs: report.prs.map((p) => ({ name: p.name, gain: `${gain(p.gainKg)} ${unit.toUpperCase()}` })),
+        prs: (report?.prs ?? []).map((p) => ({ name: p.name, ...gain(p) })),
       });
       // Only clear the workout once the server has it.
       endWorkout();
@@ -186,7 +196,10 @@ export default function Logger({
           </span>
           <button
             type="button"
-            onClick={() => setFinishing(true)}
+            onClick={() => {
+              setSheetUp(true);
+              setFinishing(true);
+            }}
             className="press h-10 bg-[var(--bg)] px-3 text-xs font-bold uppercase tracking-[0.12em] text-[var(--fg)]"
           >
             Finish
@@ -201,9 +214,9 @@ export default function Logger({
             key={ex.id}
             exercise={ex}
             sets={active.sets.filter((s) => s.exerciseInstanceId === ex.id)}
-            flags={flags}
+            prs={prs}
             last={history.last[ex.exerciseId]}
-            bestKg={history.bestE1rmKg[ex.exerciseId]}
+            best={history.bests[ex.exerciseId]}
             unit={unit}
             lastLogged={lastLogged}
             arriving={ex.id === landed}
@@ -265,17 +278,19 @@ export default function Logger({
             <h2 id="finish-title" ref={sheetTitle} tabIndex={-1} className="display text-3xl outline-none">
               Finish workout
             </h2>
-            <StatGrid
-              size="text-xl"
-              items={[
-                ["Time", minutes(active.workout.startedAt)],
-                ["Sets", String(active.sets.length)],
-                [`Vol ${unit}`, volume],
-                ["PRs", String(report.prs.length)],
-              ]}
-            />
+            {report && (
+              <StatGrid
+                size="text-xl"
+                items={[
+                  ["Time", minutes(active.workout.startedAt)],
+                  ["Sets", String(active.sets.length)],
+                  [`Vol ${unit}`, volume],
+                  ["PRs", String(report.prs.length)],
+                ]}
+              />
+            )}
 
-            {report.prs.length > 0 && (
+            {report && report.prs.length > 0 && (
               <section aria-labelledby="finish-prs" className="space-y-2">
                 <h3 id="finish-prs" className="label">
                   New bests
@@ -286,21 +301,20 @@ export default function Logger({
                       <span className="min-w-0">
                         <span className="block truncate text-base font-bold uppercase tracking-[-0.01em]">{p.name}</span>
                         <span className="mt-0.5 block text-xs font-semibold uppercase tracking-[0.08em] opacity-70">
-                          {p.set.reps} @ {formatLoad(p.set.weight, p.set.unit)}
+                          {PR_LABEL[p.kind]} · {p.set.reps} @ {formatLoad(p.set.weight, p.set.unit)}
                         </span>
                       </span>
                       <span className="text-right">
-                        <span className="block text-xl font-bold leading-none tracking-[-0.02em] tabular">{gain(p.gainKg)}</span>
-                        <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{unit} est. 1RM</span>
+                        <span className="block text-xl font-bold leading-none tracking-[-0.02em] tabular">{gain(p).value}</span>
+                        <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{gain(p).what}</span>
                       </span>
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-[var(--muted)]">Est. 1RM: the most you could lift once, worked out from the set.</p>
               </section>
             )}
 
-            {report.lines.length > 0 && (
+            {report && report.lines.length > 0 && (
               <section aria-labelledby="finish-vs" className="space-y-2">
                 <h3 id="finish-vs" className="label">
                   Vs last session
@@ -438,9 +452,9 @@ function useWakeLock() {
 function ExerciseBlock({
   exercise,
   sets,
-  flags,
+  prs,
   last,
-  bestKg,
+  best,
   unit,
   lastLogged,
   arriving,
@@ -453,15 +467,15 @@ function ExerciseBlock({
 }: {
   exercise: ExerciseInstance;
   sets: SetEntry[];
-  flags: Map<string, boolean>;
+  prs: Map<string, PrKind | null>;
   last?: { reps: number; weight: number; unit: string }[];
-  bestKg?: number;
+  best?: Bests;
   unit: Unit;
   lastLogged: string | null;
   arriving: boolean;
   first: boolean;
   lastInList: boolean;
-  onLogged: (entry: SetEntry, pr: boolean) => void;
+  onLogged: (entry: SetEntry, pr: PrKind | null) => void;
   onRemove: (id: string) => void;
   onMove: (by: -1 | 1) => void;
   onRemoveExercise: () => void;
@@ -483,7 +497,7 @@ function ExerciseBlock({
     if (problem) return;
     // Focus stays where it is: a tap on Log set never opens the keyboard, Enter in a field keeps typing there.
     const entry = addSet(exercise.id, Number(reps), Number(weight), unit);
-    onLogged(entry, prFlags([...sets, entry], bestKg).at(-1)!);
+    onLogged(entry, prKinds([...sets, entry], best).at(-1)?.kind ?? null);
   }
 
   return (
@@ -538,7 +552,7 @@ function ExerciseBlock({
       {sets.length > 0 && (
         <ol className="border-b border-[var(--divider)]">
           {sets.map((s, i) => (
-            <SetRow key={s.id} set={s} index={i} isPr={!!flags.get(s.id)} isNew={s.id === lastLogged} onRemove={onRemove} />
+            <SetRow key={s.id} set={s} index={i} pr={prs.get(s.id) ?? null} isNew={s.id === lastLogged} onRemove={onRemove} />
           ))}
         </ol>
       )}

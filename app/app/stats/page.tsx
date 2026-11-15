@@ -7,6 +7,7 @@ import { formatDayMonth, safeTimeZone, TZ_COOKIE } from "@/lib/time";
 import { exerciseName, formatLoad, formatNumber, fromKg, type Unit } from "@/lib/lift";
 import { getStats, resolveRange, resolveUnit, type Range } from "@/lib/stats";
 import { getExerciseNames } from "@/lib/history";
+import { prGain } from "@/lib/prs";
 import StatGrid from "@/components/StatGrid";
 
 export const metadata: Metadata = { title: "Stats" };
@@ -99,9 +100,10 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
                         {formatDayMonth(new Date(pr.occurredAt), tz)} · {pr.reps} × {formatLoad(u(pr.weightKg), unit)}
                       </span>
                     </span>
+                    {/* Same words as the Finish sheet: "+2.5 kg heavier" or "+2 more reps" (DD-048, prGain). */}
                     <span className="text-right">
-                      <span className="block text-lg font-bold tabular">+{formatNumber(u(pr.e1rmKg - pr.prevKg))}</span>
-                      <span className="label">e1RM</span>
+                      <span className="block text-lg font-bold tabular">{prGain(pr, unit).value}</span>
+                      <span className="label">{prGain(pr, unit).what}</span>
                     </span>
                   </li>
                 ))}

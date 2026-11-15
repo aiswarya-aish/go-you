@@ -4,11 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { workoutsTag } from "@/lib/stats";
 import { exerciseName, KG_PER_LB } from "@/lib/lift";
 import { buildTemplates, TEMPLATE_UNLOCK_SESSIONS, type ProgramTemplate } from "@/lib/templates";
+import { bestsFrom, type Bests } from "@/lib/prs";
 
 export type LastSet = { reps: number; weight: number; unit: string };
 export type ExerciseHistory = {
   last: Record<string, LastSet[]>; // sets from the most recent session of each exercise
-  bestE1rmKg: Record<string, number>; // all-time best Epley e1RM per exercise
+  bests: Record<string, Bests>; // all-time heaviest + rep frontier per exercise (PR kinds, DD-048)
   mine: { id: string; name: string }[]; // every exercise the lifter has logged, most recent first, by their saved name
 };
 
@@ -22,21 +23,25 @@ async function loadNames(userId: string): Promise<Record<string, string>> {
 export const getExerciseNames = (userId: string) =>
   unstable_cache(() => loadNames(userId), ["names", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
 
-// Best Epley e1RM (kg) per exercise, optionally only from workouts that started before `before`.
-export async function bestE1rmByExercise(userId: string, before?: Date): Promise<Record<string, number>> {
-  const rows = await prisma.$queryRaw<{ exerciseId: string; best: number }[]>`
+// Bests per exercise (heaviest + rep frontier, DD-048), optionally only from workouts that started before `before`.
+// One row per exercise and weight (in kg) with the most reps done at it; the frontier is built in JS.
+export async function bestsByExercise(userId: string, before?: Date): Promise<Record<string, Bests>> {
+  const rows = await prisma.$queryRaw<{ exerciseId: string; kg: number; reps: number }[]>`
     SELECT ei."exerciseId",
-           MAX(CASE WHEN s.unit = 'lb' THEN s.weight * ${KG_PER_LB} ELSE s.weight END * (1 + s.reps::float8 / 30)) AS best
+           CASE WHEN s.unit = 'lb' THEN s.weight * ${KG_PER_LB} ELSE s.weight END AS kg,
+           MAX(s.reps) AS reps
     FROM "SetEntry" s
     JOIN "ExerciseInstance" ei ON ei.id = s."exerciseInstanceId"
     JOIN "Workout" w ON w.id = ei."workoutId"
     WHERE w."userId" = ${userId} ${before ? Prisma.sql`AND w."startedAt" < ${before}` : Prisma.empty}
-    GROUP BY ei."exerciseId"`;
-  return Object.fromEntries(rows.map((r) => [r.exerciseId, Number(r.best)]));
+    GROUP BY 1, 2`;
+  const byExercise = new Map<string, { kg: number; reps: number }[]>();
+  for (const r of rows) (byExercise.get(r.exerciseId) ?? byExercise.set(r.exerciseId, []).get(r.exerciseId)!).push({ kg: Number(r.kg), reps: Number(r.reps) });
+  return Object.fromEntries([...byExercise].map(([id, list]) => [id, bestsFrom(list)]));
 }
 
 async function load(userId: string): Promise<ExerciseHistory> {
-  const [recent, bestE1rmKg, names] = await Promise.all([
+  const [recent, bests, names] = await Promise.all([
     // shortcut: only the last 150 exercise entries are scanned for "last session"; older-only exercises show no LAST line.
     prisma.exerciseInstance.findMany({
       where: { workout: { userId } },
@@ -45,18 +50,18 @@ async function load(userId: string): Promise<ExerciseHistory> {
       relationLoadStrategy: "join",
       select: { exerciseId: true, sets: { orderBy: { createdAt: "asc" }, select: { reps: true, weight: true, unit: true } } },
     }),
-    bestE1rmByExercise(userId),
+    bestsByExercise(userId),
     loadNames(userId),
   ]);
 
   const last: ExerciseHistory["last"] = {};
   for (const ex of recent) if (!last[ex.exerciseId] && ex.sets.length) last[ex.exerciseId] = ex.sets;
   // Recent first (the order of `last`), then the rest of the lifter's exercises.
-  const mine = [...new Set([...Object.keys(last), ...Object.keys(bestE1rmKg)])].map((id) => ({
+  const mine = [...new Set([...Object.keys(last), ...Object.keys(bests)])].map((id) => ({
     id,
     name: names[id] ?? exerciseName(id),
   }));
-  return { last, bestE1rmKg, mine };
+  return { last, bests, mine };
 }
 
 export const getExerciseHistory = (userId: string) =>
