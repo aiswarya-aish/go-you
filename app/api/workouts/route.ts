@@ -27,9 +27,11 @@ export async function POST(req: Request) {
   // The lifter's name for each new exercise (the first name used is kept). Runs beside the workout transaction, so a save
   // costs no extra round trip; it is not part of it, because a missing name only falls back to the slug.
   const names = [...new Map(exercises.filter((e) => e.label).map((e) => [e.exerciseId, e.label!.trim()])).entries()];
-  const saveNames = prisma.exercise
-    .createMany({ data: names.map(([id, name]) => ({ userId, id, name })), skipDuplicates: true })
-    .catch(() => {});
+  // The in-progress copy of this workout goes too (P1-01): nothing left to resume. Same side lane, same reasoning.
+  const sideWrites = Promise.all([
+    prisma.exercise.createMany({ data: names.map(([id, name]) => ({ userId, id, name })), skipDuplicates: true }),
+    prisma.workoutDraft.deleteMany({ where: { userId, workoutId: workout.id } }),
+  ]).catch(() => {});
   try {
     // 3 inserts in one transaction, whatever the workout size.
     await prisma.$transaction([
@@ -70,7 +72,7 @@ export async function POST(req: Request) {
     }
   }
 
-  await saveNames; // before the caches are cleared, so the next page shows the names
+  await sideWrites; // before the caches are cleared, so the next page shows the names
   revalidateTag(workoutsTag(userId), { expire: 0 });
   return NextResponse.json({ id: workout.id });
 }

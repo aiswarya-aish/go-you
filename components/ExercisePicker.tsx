@@ -25,6 +25,7 @@ export default function ExercisePicker({
   const [active, setActive] = useState(-1); // -1: no row chosen (an empty field never adds by itself)
   const [added, setAdded] = useState<string | null>(null); // the last pick, confirmed under the field
   const input = useRef<HTMLInputElement>(null);
+  const tap = useRef<{ x: number; y: number } | null>(null); // where a row press started
 
   const typed = query.trim();
   const meta = (o: { id: string; mine: boolean }) =>
@@ -50,6 +51,13 @@ export default function ExercisePicker({
     setQuery("");
     setActive(-1);
     setOpen(false);
+  }
+
+  // A press that ends within 10px of where it started is a tap; anything further was a scroll.
+  function pickIfTap(item: Item, x: number, y: number) {
+    const t = tap.current;
+    tap.current = null;
+    if (t && Math.hypot(x - t.x, y - t.y) < 10) pick(item, false);
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -115,7 +123,9 @@ export default function ExercisePicker({
       {shown && (
         <div>
           <p className="label pt-2 pb-1">{heading}</p>
-          {/* Pointer-down keeps focus in the field, so a tap picks the row instead of first closing the list. */}
+          {/* A row commits when the finger lifts, not on click: iPhone Safari blurs the field before its click, which closed
+              the list and swallowed the tap. A finger that moved over 10px was scrolling, not tapping.
+              Pointer-down keeps focus in the field on desktop. Clicks without a pointer (VoiceOver, keyboard) still pick. */}
           <ul id="exercise-options" role="listbox" aria-label="Exercises" className="-mx-4 border-b border-[var(--divider)] md:mx-0" onPointerDown={(e) => e.preventDefault()}>
             {items.map((item, i) => (
               <li
@@ -123,7 +133,17 @@ export default function ExercisePicker({
                 id={`exercise-option-${i}`}
                 role="option"
                 aria-selected={i === current}
-                onClick={() => pick(item, false)}
+                onPointerDown={(e) => (tap.current = { x: e.clientX, y: e.clientY })}
+                // Mouse and pen pick on release.
+                onPointerUp={(e) => e.pointerType !== "touch" && pickIfTap(item, e.clientX, e.clientY)}
+                // A finger picks at touchend, while the row is still on screen, and cancels what the phone does next
+                // (focus change, click): otherwise that click lands on whatever the closed list uncovered, e.g. Log set.
+                onTouchEnd={(e) => {
+                  if (e.cancelable) e.preventDefault();
+                  const t = e.changedTouches[0];
+                  if (t) pickIfTap(item, t.clientX, t.clientY);
+                }}
+                onClick={(e) => e.detail === 0 && pick(item, false)}
                 onPointerEnter={(e) => e.pointerType === "mouse" && setActive(i)}
                 className={`press grid min-h-[var(--tap-lg)] cursor-pointer grid-cols-[1fr_auto] items-center gap-3 border-t border-[var(--divider)] px-4 active:bg-[var(--fg)] active:text-[var(--bg)] ${
                   i === current ? "bg-[var(--fg)] text-[var(--bg)]" : ""

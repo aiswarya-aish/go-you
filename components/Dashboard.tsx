@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useWorkoutStore } from "@/state/workoutStore";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { useWorkoutStore, type ActiveWorkout } from "@/state/workoutStore";
 import { useGoals } from "@/lib/goals";
 import type { ProgramTemplate } from "@/lib/templates";
 import type { ExerciseHistory } from "@/lib/history";
@@ -15,21 +15,35 @@ export default function Dashboard({
   monthlyCount,
   history,
   templates,
+  draft,
 }: {
   userId: string;
   weeklyCount: number;
   monthlyCount: number;
   history: ExerciseHistory;
   templates: ProgramTemplate[]; // earned routines; empty until unlocked (DD-037)
+  draft: ActiveWorkout | null; // an unfinished workout kept on the server (P1-01)
 }) {
   const stored = useWorkoutStore((s) => s.activeWorkout);
+  const endedId = useWorkoutStore((s) => s.endedId);
   const startWorkout = useWorkoutStore((s) => s.startWorkout);
+  // Until the phone's own copy is loaded, an offer to resume could be wrong (this device may have the workout itself).
+  const hydrated = useSyncExternalStore(
+    (cb) => useWorkoutStore.persist.onFinishHydration(cb),
+    () => useWorkoutStore.persist.hasHydrated(),
+    () => false,
+  );
   // A workout left on this device by another account is not shown.
   const activeWorkout = stored?.workout.userId === userId ? stored : null;
   const goals = useGoals();
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [declined, setDeclined] = useState(false);
+  const [savedElsewhere, setSavedElsewhere] = useState(false);
 
-  if (activeWorkout) return <Logger history={history} onSaved={setReceipt} />;
+  if (activeWorkout) return <Logger history={history} onSaved={setReceipt} onSavedElsewhere={() => setSavedElsewhere(true)} />;
+
+  const resumable =
+    hydrated && !declined && draft?.workout.userId === userId && draft.workout.id !== endedId && draft.sets.length > 0 ? draft : null;
 
   function startFromTemplate(template: ProgramTemplate) {
     startWorkout(userId, template.name);
@@ -41,6 +55,25 @@ export default function Dashboard({
   return (
     <section className="space-y-10">
       {receipt && <SavedReceipt receipt={receipt} onDismiss={() => setReceipt(null)} />}
+      {/* The workout left this screen because another device saved it: one plain line, so it never just vanishes. */}
+      {savedElsewhere && (
+        <p role="status" className="border-l-2 border-[var(--fg)] pl-3 text-sm">
+          That workout was saved on another device. It is in Log.
+        </p>
+      )}
+      {resumable && (
+        <ResumeCard
+          draft={resumable}
+          onResume={() => {
+            useWorkoutStore.getState().resumeWorkout(resumable);
+            window.scrollTo(0, 0);
+          }}
+          onDiscard={() => {
+            setDeclined(true);
+            fetch(`/api/draft?workout=${resumable.workout.id}`, { method: "DELETE" }).catch(() => {});
+          }}
+        />
+      )}
 
       <header className="space-y-2">
         <p className="label">No active workout</p>
@@ -111,6 +144,43 @@ function GoalCell({ label, count, target }: { label: string; count: number; targ
       </div>
       <SegmentedBar count={count} target={target} />
     </div>
+  );
+}
+
+// An unfinished workout found on the server (another device, or this one after its storage was cleared). Ruled, not inverted:
+// it is a question, not a result. Discard needs a second tap, like discarding a live workout.
+function ResumeCard({ draft, onResume, onDiscard }: { draft: ActiveWorkout; onResume: () => void; onDiscard: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  useEffect(() => {
+    if (!confirm) return;
+    const t = setTimeout(() => setConfirm(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirm]);
+  const started = new Date(draft.workout.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const ex = draft.exercises.length;
+  const sets = draft.sets.length;
+
+  return (
+    <section aria-labelledby="resume" className="space-y-4 border-2 border-[var(--fg)] p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id="resume" className="label whitespace-nowrap text-[var(--fg)]">
+          Unfinished workout
+        </h2>
+        <span className="label whitespace-nowrap tabular">{started}</span>
+      </div>
+      <p className="text-3xl font-bold leading-none tracking-[-0.02em] tabular">
+        {ex} EX · {sets} {sets === 1 ? "SET" : "SETS"}
+      </p>
+      <p className="truncate text-sm text-[var(--muted)]">{draft.exercises.map((e) => e.label.toUpperCase()).join(" / ")}</p>
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" onClick={() => (confirm ? onDiscard() : setConfirm(true))} className="btn btn-lg">
+          {confirm ? "Tap again" : "Discard"}
+        </button>
+        <button type="button" onClick={onResume} className="btn btn-primary btn-lg">
+          Resume
+        </button>
+      </div>
+    </section>
   );
 }
 

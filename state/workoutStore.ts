@@ -4,7 +4,7 @@ import { Workout, ExerciseInstance, SetEntry } from "@/domain/workout";
 import type { Unit } from "@/lib/lift";
 import { DEFAULT_REST } from "@/lib/rest";
 
-type ActiveWorkout = {
+export type ActiveWorkout = {
   workout: Workout;
   title?: string;
   exercises: ExerciseInstance[];
@@ -13,6 +13,7 @@ type ActiveWorkout = {
 
 interface WorkoutState {
   activeWorkout: ActiveWorkout | null;
+  endedId?: string;
   unit: Unit; // remembered across workouts
   restTarget: number; // seconds, remembered across workouts
 
@@ -20,7 +21,9 @@ interface WorkoutState {
   setRestTarget: (seconds: number) => void;
   startWorkout: (userId: string, title?: string) => void;
   endWorkout: () => void;
+  resumeWorkout: (workout: ActiveWorkout) => void; // takes over an unfinished workout from the server (P1-01)
   addExercise: (exerciseId: string, label: string, variation?: string) => string | undefined;
+  setExerciseDone: (id: string, done: boolean) => void;
   addSet: (exerciseInstanceId: string, reps: number, weight: number, unit: Unit) => SetEntry;
   updateSet: (setId: string, updates: { reps?: number; weight?: number }) => void;
   removeSet: (setId: string) => SetEntry | undefined;
@@ -63,15 +66,23 @@ export const useWorkoutStore = create<WorkoutState>()(
             },
           }),
 
-        endWorkout: () => set({ activeWorkout: null }),
+        // endedId: the workout this device just saved or discarded, so Train never offers to resume it from a stale server copy.
+        endWorkout: () => set((s) => ({ activeWorkout: null, endedId: s.activeWorkout?.workout.id ?? s.endedId })),
+        resumeWorkout: (activeWorkout) => set({ activeWorkout }),
 
+        // Adding an exercise means moving on: earlier exercises that already have sets fold away (their inputs hide).
         addExercise: (exerciseId, label, variation) => {
           const id = generateId();
           patch((w) => ({
-            exercises: [...w.exercises, { id, workoutId: w.workout.id, exerciseId, label, order: w.exercises.length, variation }],
+            exercises: [
+              ...w.exercises.map((e) => (w.sets.some((s) => s.exerciseInstanceId === e.id) ? { ...e, done: true } : e)),
+              { id, workoutId: w.workout.id, exerciseId, label, order: w.exercises.length, variation },
+            ],
           }));
           return get().activeWorkout ? id : undefined;
         },
+
+        setExerciseDone: (id, done) => patch((w) => ({ exercises: w.exercises.map((e) => (e.id === id ? { ...e, done } : e)) })),
 
         addSet: (exerciseInstanceId, reps, weight, unit) => {
           const entry = { id: generateId(), exerciseInstanceId, reps, weight, unit, createdAt: new Date().toISOString() };
