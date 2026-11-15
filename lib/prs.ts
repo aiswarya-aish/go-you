@@ -46,7 +46,9 @@ export function prKinds(sets: SetLike[], best: Bests | undefined): (Pr | null)[]
     const pr: Pr | null =
       kg > weightKg + EPS ? { kind: "weight", gain: kg - weightKg } : s.reps > repsBefore ? { kind: "reps", gain: s.reps - repsBefore } : null;
     weightKg = Math.max(weightKg, kg);
-    frontier.push([kg, s.reps]);
+    // Only a PR can change future answers: a set that is not one is already matched by a heavier-or-equal set with as many
+    // reps. Pushing every set made long histories quadratic (Stats ALL, the lift page).
+    if (pr) frontier.push([kg, s.reps]);
     return pr;
   });
 }

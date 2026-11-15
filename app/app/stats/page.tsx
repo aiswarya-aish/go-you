@@ -9,6 +9,7 @@ import { getStats, resolveRange, resolveUnit, type Range } from "@/lib/stats";
 import { getExerciseNames } from "@/lib/history";
 import { prGain } from "@/lib/prs";
 import StatGrid from "@/components/StatGrid";
+import Segment from "@/components/Segment";
 
 export const metadata: Metadata = { title: "Stats" };
 
@@ -31,28 +32,6 @@ const RANGES: { value: Range; label: string }[] = [
 ];
 
 const href = (range: Range, unit: Unit) => `/app/stats?range=${range}&unit=${unit}`;
-
-// Segmented control made of links: the server renders each choice from cache.
-function Segment({ items, active }: { items: { key: string; label: string; href: string }[]; active: string }) {
-  return (
-    <div className="grid auto-cols-fr grid-flow-col gap-px border border-[var(--control)] bg-[var(--control)]">
-      {items.map((i) => (
-        <Link
-          key={i.key}
-          href={i.href}
-          replace
-          scroll={false}
-          aria-current={i.key === active ? "true" : undefined}
-          className={`press flex h-11 items-center justify-center px-2 text-xs font-bold tracking-[0.12em] ${
-            i.key === active ? "bg-[var(--fg)] text-[var(--bg)]" : "bg-[var(--bg)]"
-          }`}
-        >
-          {i.label}
-        </Link>
-      ))}
-    </div>
-  );
-}
 
 export default async function StatsPage({ searchParams }: { searchParams: Promise<{ range?: string; unit?: string }> }) {
   const [session, jar, params] = await Promise.all([getServerSession(authOptions), cookies(), searchParams]);
@@ -93,7 +72,8 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
             ) : (
               <ul className="border-b border-[var(--divider)]">
                 {data.recentPrs.map((pr) => (
-                  <li key={pr.setId} className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-[var(--divider)] py-3">
+                  <li key={pr.setId} className="border-t border-[var(--divider)]">
+                    <Link href={`/app/lift/${pr.exerciseId}?unit=${unit}`} className="press grid grid-cols-[1fr_auto] items-center gap-3 py-3">
                     <span className="min-w-0">
                       <span className="block truncate text-base font-bold tracking-[-0.01em]">{exerciseName(pr.exerciseId, names[pr.exerciseId])}</span>
                       <span className="label mt-1 block">
@@ -105,6 +85,7 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
                       <span className="block text-lg font-bold tabular">{prGain(pr, unit).value}</span>
                       <span className="label">{prGain(pr, unit).what}</span>
                     </span>
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -137,7 +118,8 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
             </h2>
             <ul className="border-b border-[var(--divider)]">
               {data.topExercises.map((ex) => (
-                <li key={ex.exerciseId} className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-t border-[var(--divider)] py-3">
+                <li key={ex.exerciseId} className="border-t border-[var(--divider)]">
+                  <Link href={`/app/lift/${ex.exerciseId}?unit=${unit}`} className="press grid grid-cols-[1fr_auto_auto] items-center gap-4 py-3">
                   <span className="min-w-0">
                     <span className="block truncate text-base font-bold tracking-[-0.01em]">{exerciseName(ex.exerciseId, names[ex.exerciseId])}</span>
                     <span className="label mt-1 block">
@@ -152,6 +134,7 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
                     <span className="block text-base font-bold tabular">{ex.best1rmKg ? formatNumber(u(ex.best1rmKg)) : "—"}</span>
                     <span className="label">e1RM</span>
                   </span>
+                  </Link>
                 </li>
               ))}
             </ul>

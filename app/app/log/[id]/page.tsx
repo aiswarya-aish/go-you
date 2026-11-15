@@ -65,7 +65,13 @@ export default async function WorkoutDetailPage({ params }: { params: Promise<{ 
         return (
           <article key={exercise.id} className="space-y-3">
             <header className="flex items-baseline justify-between gap-3 border-t-2 border-[var(--fg)] pt-3">
-              <h2 className="text-xl font-bold uppercase leading-tight tracking-[-0.01em]">{exerciseName(exercise.exerciseId, names[exercise.exerciseId])}</h2>
+              {/* The exercise name opens its lift page (P2-02): trend, every PR, past sessions. */}
+              <h2 className="text-xl font-bold uppercase leading-tight tracking-[-0.01em]">
+                <Link href={`/app/lift/${exercise.exerciseId}`} className="press inline-flex items-baseline gap-2">
+                  {exerciseName(exercise.exerciseId, names[exercise.exerciseId])}
+                  <span aria-hidden="true" className="text-base">→</span>
+                </Link>
+              </h2>
               <p className="label shrink-0">e1RM {formatNumber(topE1rm)} kg</p>
             </header>
             <ol className="border-b border-[var(--divider)]">
