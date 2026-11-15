@@ -12,6 +12,8 @@ export default function NumberField({
   decimal = false,
   large = false,
   hint,
+  aside,
+  inputLabel,
 }: {
   id: string;
   label: string;
@@ -23,6 +25,8 @@ export default function NumberField({
   decimal?: boolean;
   large?: boolean;
   hint?: string;
+  aside?: React.ReactNode; // a small control on the label row, next to the value it changes (the kg/lb switch)
+  inputLabel?: string; // the input's accessible name when the visible label is shorter ("Weight · kg" for "Weight")
 }) {
   const bump = (delta: number) => {
     const current = Number(value) || 0;
@@ -33,9 +37,12 @@ export default function NumberField({
 
   return (
     <div className="space-y-2">
-      <label htmlFor={id} className="label block">
-        {label}
-      </label>
+      <div className="flex items-center justify-between gap-2">
+        <label htmlFor={id} className="label block">
+          {label}
+        </label>
+        {aside}
+      </div>
       <div className="grid grid-cols-[var(--tap)_1fr_var(--tap)] gap-px border border-[var(--control)] bg-[var(--control)]">
         <button type="button" className={`press ${cell} bg-[var(--bg)] text-lg font-bold`} onClick={() => bump(-step)} aria-label={`Decrease ${name} by ${step}`}>
           −
@@ -48,6 +55,7 @@ export default function NumberField({
           value={value}
           onChange={(e) => onChange(e.target.value.replace(",", "."))}
           aria-describedby={hint ? `${id}-hint` : undefined}
+          aria-label={inputLabel}
           className={`${cell} min-w-0 bg-[var(--bg)] text-center ${large ? "text-2xl" : "text-xl"} font-semibold tabular outline-none focus-visible:outline-offset-[-2px]`}
         />
         <button type="button" className={`press ${cell} bg-[var(--bg)] text-lg font-bold`} onClick={() => bump(step)} aria-label={`Increase ${name} by ${step}`}>

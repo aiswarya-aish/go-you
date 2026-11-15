@@ -65,7 +65,8 @@ export default function AppShell({ children, user }: { children: React.ReactNode
       </a>
 
       {/* Mobile: brand bar. Navigation lives at the bottom, under the thumb. */}
-      <header className="flex h-12 items-center border-b border-[var(--divider)] px-4 md:hidden">
+      {/* During a workout the workout bar is the header: the brand steps aside so the bar sits at the very top. */}
+      <header className={`${live ? "hidden" : "flex"} h-12 items-center border-b border-[var(--divider)] px-4 md:hidden`}>
         <span className="text-sm font-bold tracking-wide">GO—YOU</span>
       </header>
 
