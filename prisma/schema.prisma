@@ -7,10 +7,13 @@ datasource db {
   provider = "postgresql"
 }
 
+// P3-01 (DD-053): a random id; the email is kept only as a keyed hash (HMAC, secret in env), never readable. Null only on pre-P3 rows,
+// which can no longer sign in and go at the launch wipe.
 model User {
   id           String    @id
-  email        String    @unique
+  emailHash    String?   @unique
   passwordHash String
+  createdAt    DateTime  @default(now())
   workouts     Workout[]
   exercises    Exercise[]
   draft        WorkoutDraft?
@@ -74,4 +77,20 @@ model SetEntry {
   exerciseInstance ExerciseInstance @relation(fields: [exerciseInstanceId], references: [id])
 
   @@index([exerciseInstanceId])
+}
+
+// The 6-digit code that proves an email before a password is set (sign-up and reset are the same flow). One live code per email.
+model EmailCode {
+  emailHash String   @id
+  codeHash  String
+  attempts  Int      @default(0)
+  createdAt DateTime
+  expiresAt DateTime
+}
+
+// Fixed-window counters for sign-in and code requests, keyed by hashed email or hashed IP (lib/rate-limit.ts).
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime
 }

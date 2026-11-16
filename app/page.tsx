@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { rememberTimeZone } from "@/lib/time";
-
-const getCsrf = () =>
-  fetch("/api/auth/csrf")
-    .then((r) => r.json())
-    .then((d: { csrfToken: string }) => d.csrfToken);
+import { EMAIL_KEY, getCsrf, signInRequest } from "@/lib/sign-in";
 
 export default function AuthPage() {
   const router = useRouter();
@@ -37,26 +34,22 @@ export default function AuthPage() {
 
     setLoading(true);
     try {
-      const csrfToken = (await csrf.current) || (await getCsrf());
-      // The same request next-auth's signIn() makes, without its extra session fetch and page reload.
-      const res = await fetch("/api/auth/callback/credentials", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ email, password, csrfToken, json: "true" }),
-      });
-      const { url } = (await res.json()) as { url?: string };
-      if (!url || new URL(url, location.href).searchParams.has("error")) {
-        csrf.current = getCsrf().catch(() => "");
-        setError("Invalid email or password.");
-        setLoading(false);
-        return;
-      }
-      router.replace("/app");
+      const result = await signInRequest(email, password, (await csrf.current) || (await getCsrf()));
+      if (result === "ok") return router.replace("/app");
+      csrf.current = getCsrf().catch(() => "");
+      setError(result === "tooMany" ? "Too many tries. Wait 15 minutes, or reset your password." : "Wrong email or password.");
     } catch {
       setError("No connection. Try again.");
-      setLoading(false);
     }
+    setLoading(false);
   }
+
+  // The email typed here follows to Create account / Forgot password (session storage, never the URL).
+  const carryEmail = () => {
+    try {
+      sessionStorage.setItem(EMAIL_KEY, email.trim());
+    } catch {}
+  };
 
   return (
     <main className="min-h-dvh flex items-center px-4 sm:px-6">
@@ -105,7 +98,14 @@ export default function AuthPage() {
           </p>
         </form>
 
-        <p className="mt-6 text-xs text-[var(--muted)]">New here? Your account is created on first sign-in.</p>
+        <nav aria-label="Account" className="mt-6 grid grid-cols-2 border-t border-[var(--divider)]">
+          <Link href="/signup" onClick={carryEmail} className="press label flex min-h-[var(--tap)] items-center text-[var(--fg)]">
+            Create account
+          </Link>
+          <Link href="/reset" onClick={carryEmail} className="press label flex min-h-[var(--tap)] items-center justify-end">
+            Forgot password
+          </Link>
+        </nav>
       </section>
     </main>
   );
