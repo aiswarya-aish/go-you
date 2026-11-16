@@ -8,6 +8,7 @@ import GoalsForm from "@/components/GoalsForm";
 import SegmentedBar from "@/components/SegmentedBar";
 import SignOutButton from "@/components/SignOutButton";
 import InstallApp from "@/components/InstallApp";
+import { brand } from "@/lib/name";
 
 export const metadata: Metadata = { title: "Goals" };
 
@@ -73,7 +74,10 @@ export default async function GoalsPage() {
       {/* On mobile the sidebar (and its log out) is hidden, so the account lives here. */}
       <section className="space-y-3 border-t border-[var(--divider)] pt-6 md:hidden">
         <h2 className="label">Account</h2>
-        <p className="break-all text-sm">{session?.user.email}</p>
+        {/* P3-08: a sign-off instead of the email (DD-055). */}
+        <p className="label text-[var(--fg)]">
+          {brand(session?.user.name)} <span className="text-[var(--muted)]">· signed in</span>
+        </p>
         <SignOutButton />
       </section>
     </section>
