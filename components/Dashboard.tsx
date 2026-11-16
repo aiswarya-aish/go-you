@@ -18,6 +18,7 @@ export default function Dashboard({
   history,
   templates,
   draft,
+  firstRun,
 }: {
   userId: string;
   name?: string | null;
@@ -26,6 +27,7 @@ export default function Dashboard({
   history: ExerciseHistory;
   templates: ProgramTemplate[]; // earned routines; empty until unlocked (DD-037)
   draft: ActiveWorkout | null; // an unfinished workout kept on the server (P1-01)
+  firstRun: boolean; // no saved workout yet: Train shows how it works (P3-03)
 }) {
   const stored = useWorkoutStore((s) => s.activeWorkout);
   const endedId = useWorkoutStore((s) => s.endedId);
@@ -91,6 +93,8 @@ export default function Dashboard({
         </h1>
       </header>
 
+      {firstRun && !receipt && <FirstRun />}
+
       <button type="button" className="btn btn-primary btn-lg w-full" onClick={() => startWorkout(userId)}>
         Start blank
       </button>
@@ -141,6 +145,60 @@ export default function Dashboard({
           </ul>
         </section>
       )}
+    </section>
+  );
+}
+
+// P3-03: Train's empty state for a new lifter, until the first workout is saved. No dismiss (it leaves by itself) and no
+// animation (it is the page, not an arrival). Read, choose the unit, then the Start blank button right below.
+const HOW = [
+  "Start blank, add a lift, log each set.",
+  "Every new best is marked PR the moment you log it.",
+  "After 21 sessions, the workouts you repeat become routines.",
+];
+
+function FirstRun() {
+  const unit = useWorkoutStore((s) => s.unit);
+  const setUnit = useWorkoutStore((s) => s.setUnit);
+  return (
+    <section aria-labelledby="first-run" className="space-y-4">
+      <h2 id="first-run" className="label text-[var(--fg)]">
+        How it works
+      </h2>
+      <ol className="border-b border-[var(--divider)]">
+        {HOW.map((line, i) => (
+          <li key={i} className="grid grid-cols-[2.25rem_1fr] items-baseline border-t border-[var(--divider)] py-3">
+            <span aria-hidden="true" className="label tabular">
+              0{i + 1}
+            </span>
+            <span className="text-pretty text-base leading-snug">{line}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="grid grid-cols-[1fr_9rem] items-center gap-4">
+        <div>
+          <p id="unit-label" className="label text-[var(--fg)]">
+            Weights in
+          </p>
+          <p className="mt-1 text-pretty text-sm text-[var(--muted)]">Switch any time, even mid-workout.</p>
+        </div>
+        {/* Same look as the Stats segments (Segment.tsx), as buttons: it sets the unit for logging and Stats. */}
+        <div role="group" aria-labelledby="unit-label" className="grid grid-cols-2 gap-px border border-[var(--control)] bg-[var(--control)]">
+          {(["kg", "lb"] as const).map((u) => (
+            <button
+              key={u}
+              type="button"
+              aria-pressed={unit === u}
+              onClick={() => setUnit(u)}
+              className={`press flex h-11 items-center justify-center text-xs font-bold uppercase tracking-[0.12em] ${
+                unit === u ? "bg-[var(--fg)] text-[var(--bg)]" : "bg-[var(--bg)]"
+              }`}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+      </div>
     </section>
   );
 }

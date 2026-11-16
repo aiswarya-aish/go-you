@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { rememberTimeZone } from "@/lib/time";
 import { RENEWED_KEY } from "@/lib/sign-in";
 import { brand } from "@/lib/name";
+import { rememberUnit } from "@/lib/lift";
 import { useWorkoutStore } from "@/state/workoutStore";
 import SignOutButton from "@/components/SignOutButton";
 
@@ -66,7 +67,8 @@ export default function AppShell({ children, user }: { children: React.ReactNode
 
   useEffect(() => {
     rememberTimeZone();
-    useWorkoutStore.persist.rehydrate();
+    // The unit cookie follows this phone's remembered unit (accounts from before P3-03 have no cookie yet).
+    Promise.resolve(useWorkoutStore.persist.rehydrate()).then(() => rememberUnit(useWorkoutStore.getState().unit));
     renewSession();
     // Offline Train + installability (DD-039). Production only, so dev reloads never serve a stale copy.
     if (process.env.NODE_ENV === "production") navigator.serviceWorker?.register("/sw.js").catch(() => {});
