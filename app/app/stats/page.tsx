@@ -6,7 +6,8 @@ import { authOptions } from "@/lib/auth";
 import { formatDayMonth, safeTimeZone, TZ_COOKIE } from "@/lib/time";
 import { exerciseName, formatLoad, formatNumber, fromKg, type Unit } from "@/lib/lift";
 import { getStats, resolveRange, resolveUnit, type Range } from "@/lib/stats";
-import { getExerciseNames } from "@/lib/history";
+import { getBoard, getExerciseNames } from "@/lib/history";
+import { isRecent, type BoardRow } from "@/lib/lift-history";
 import { prGain } from "@/lib/prs";
 import StatGrid from "@/components/StatGrid";
 import Segment from "@/components/Segment";
@@ -31,6 +32,9 @@ const RANGES: { value: Range; label: string }[] = [
   { value: "all", label: "ALL" },
 ];
 
+const BOARD_ROWS = 6; // the rest sit behind "All N lifts"
+const NEW_DAYS = 14; // a record this fresh gets the New tag
+
 const href = (range: Range, unit: Unit) => `/app/stats?range=${range}&unit=${unit}`;
 
 export default async function StatsPage({ searchParams }: { searchParams: Promise<{ range?: string; unit?: string }> }) {
@@ -38,13 +42,66 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
   const range = resolveRange(params.range);
   const unit = resolveUnit(params.unit);
   const tz = safeTimeZone(jar.get(TZ_COOKIE)?.value);
-  const [data, names] = await Promise.all([getStats(session!.user.id, range, tz), getExerciseNames(session!.user.id)]);
+  const [data, names, board] = await Promise.all([
+    getStats(session!.user.id, range, tz),
+    getExerciseNames(session!.user.id),
+    getBoard(session!.user.id),
+  ]);
   const u = (kg: number) => fromKg(kg, unit);
+
+  // One lift: its best estimate (or most reps, bodyweight), the heaviest set and when a record last moved. Opens the lift page.
+  const boardRow = (b: BoardRow) => (
+    <li key={b.exerciseId} className="border-t border-[var(--divider)]">
+      <Link href={`/app/lift/${b.exerciseId}?unit=${unit}`} className="press grid grid-cols-[1fr_auto] items-center gap-3 py-3">
+        <span className="min-w-0">
+          <span className="flex items-center gap-2">
+            <span className="truncate text-base font-bold tracking-[-0.01em]">{exerciseName(b.exerciseId, names[b.exerciseId])}</span>
+            {isRecent(b.lastPrAt, NEW_DAYS) && <span className="tag shrink-0">New</span>}
+          </span>
+          <span className="label mt-1 block truncate">
+            {b.heavyKg ? `Heaviest ${b.heavyReps} × ${formatLoad(u(b.heavyKg), unit)}` : "Bodyweight"}
+            {b.lastPrAt && ` · ${formatDayMonth(new Date(b.lastPrAt), tz)}`}
+          </span>
+        </span>
+        <span className="text-right">
+          <span className="block text-lg font-bold tabular">{b.e1rmKg ? formatNumber(u(b.e1rmKg)) : b.bestReps}</span>
+          {!b.e1rmKg && <span className="label">Most reps</span>}
+        </span>
+      </Link>
+    </li>
+  );
   const maxTrendVolume = Math.max(0, ...data.volumeTrend.map((e) => e.volumeKg));
 
   return (
     <section className="space-y-10">
       <h1 className="display text-5xl">Stats</h1>
+
+      {/* All-time, so it sits above the range filter it ignores (P2-03, DD-050). */}
+      {board.length > 0 && (
+        <section aria-labelledby="bests" className="space-y-3">
+          {/* The column is named once here, not under every row; bodyweight rows label their own number. */}
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 id="bests" className="label">
+              All-time bests
+            </h2>
+            <span className="label">Est. 1RM {unit}</span>
+          </div>
+          <ul className="border-b border-[var(--divider)]">{board.slice(0, BOARD_ROWS).map(boardRow)}</ul>
+          {board.length > BOARD_ROWS && (
+            <details className="group">
+              <summary className="press label flex min-h-[var(--tap)] cursor-pointer list-none items-center justify-between text-[var(--fg)] [&::-webkit-details-marker]:hidden">
+                <span className="group-open:hidden">All {board.length} lifts</span>
+                <span className="hidden group-open:inline">Fewer lifts</span>
+                <span aria-hidden="true" className="text-base leading-none">
+                  <span className="group-open:hidden">+</span>
+                  <span className="hidden group-open:inline">−</span>
+                </span>
+              </summary>
+              <ul className="border-b border-[var(--divider)]">{board.slice(BOARD_ROWS).map(boardRow)}</ul>
+            </details>
+          )}
+        </section>
+      )}
 
       <div className="grid grid-cols-[1fr_auto] gap-3" aria-label="Filters">
         <Segment active={range} items={RANGES.map((r) => ({ key: r.value, label: r.label, href: href(r.value, unit) }))} />

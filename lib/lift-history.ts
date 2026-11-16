@@ -37,9 +37,39 @@ export function liftHistory(sessions: LiftSession[]) {
   };
 }
 
+// The PR board on Stats (P2-03, DD-050): every lift's current bests, the freshest record first.
+export type BoardRow = {
+  exerciseId: string;
+  e1rmKg: number; // 0 for bodyweight-only lifts: the board shows bestReps instead
+  heavyKg: number;
+  heavyReps: number;
+  bestReps: number;
+  lastPrAt: string | null; // null: one session so far (the baseline), nothing beaten yet
+};
+
+export function liftBoard(byLift: Record<string, LiftSession[]>): BoardRow[] {
+  const rows = Object.entries(byLift).flatMap(([exerciseId, sessions]) => {
+    const h = liftHistory(sessions);
+    if (!h.heaviest) return [];
+    const reps = sessions.flatMap((s) => s.sets.map((x) => x.reps));
+    return [{
+      exerciseId,
+      e1rmKg: h.bestE1rmKg,
+      heavyKg: toKg(h.heaviest.weight, h.heaviest.unit),
+      heavyReps: h.heaviest.reps,
+      bestReps: Math.max(...reps),
+      lastPrAt: h.prs[0]?.startedAt ?? null,
+    }];
+  });
+  return rows.sort((a, b) => (b.lastPrAt ?? "").localeCompare(a.lastPrAt ?? "") || b.e1rmKg - a.e1rmKg);
+}
+
 // Points inside the last `days` (null = all), for the chart's range switch.
 export function pointsSince(points: LiftPoint[], days: number | null, now = Date.now()) {
   if (days === null) return points;
   const since = now - days * 86400000;
   return points.filter((p) => Date.parse(p.startedAt) >= since);
 }
+
+// A record set within the last `days` (the board's New tag).
+export const isRecent = (iso: string | null, days: number, now = Date.now()) => !!iso && Date.parse(iso) >= now - days * 86400000;
