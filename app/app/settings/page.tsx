@@ -8,6 +8,7 @@ import GoalsForm from "@/components/GoalsForm";
 import SegmentedBar from "@/components/SegmentedBar";
 import SignOutButton from "@/components/SignOutButton";
 import InstallApp from "@/components/InstallApp";
+import DeleteAccount from "@/components/DeleteAccount";
 import { brand } from "@/lib/name";
 
 export const metadata: Metadata = { title: "Goals" };
@@ -80,6 +81,9 @@ export default async function GoalsPage() {
         </p>
         <SignOutButton />
       </section>
+
+      {/* Every size (desktop has no Account section here): last on the page, ruled off from Log out. */}
+      <DeleteAccount workouts={sessions} />
     </section>
   );
 }

@@ -12,6 +12,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const csrf = useRef<Promise<string> | null>(null);
 
   // While the user types: fetch the CSRF token and wake the server + database.
@@ -19,6 +20,11 @@ export default function AuthPage() {
     rememberTimeZone();
     csrf.current = getCsrf().catch(() => "");
     fetch("/api/warm").catch(() => {});
+    // P3-07: arriving from Delete account. Said once, then the URL is clean again.
+    if (new URLSearchParams(location.search).has("deleted")) {
+      setDeleted(true); // eslint-disable-line react-hooks/set-state-in-effect -- read once from the URL after mount
+      history.replaceState(null, "", "/");
+    }
   }, []);
 
   // The error stays until the user changes what caused it.
@@ -56,6 +62,11 @@ export default function AuthPage() {
       <section className="w-full max-w-[420px] mx-auto sm:-translate-y-[4vh]">
         <h1 className="display text-6xl sm:text-7xl mb-3">GO—YOU</h1>
         <p className="label mb-10">Train. Log. Progress.</p>
+        {deleted && (
+          <p role="status" className="-mt-4 mb-8 border-l-2 border-[var(--fg)] pl-3 text-sm">
+            Your account and all its workouts are deleted.
+          </p>
+        )}
 
         <form className="space-y-6" onSubmit={handleLogin} noValidate>
           <div className="space-y-2">
