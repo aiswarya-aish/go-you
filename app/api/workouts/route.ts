@@ -76,3 +76,20 @@ export async function POST(req: Request) {
   revalidateTag(workoutsTag(userId), { expire: 0 });
   return NextResponse.json({ id: workout.id });
 }
+
+// DELETE ?id=<workout>: remove a saved workout and its sets (P2-04). No cascades in the schema, so children go first, in one transaction.
+// Scoped to the user at every level; an id that is gone (or not theirs) is a 204 too, so a retry after a lost response is harmless.
+export async function DELETE(req: Request) {
+  const userId = (await getServerSession(authOptions))?.user?.id;
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  const workout = { id, userId };
+  await prisma.$transaction([
+    prisma.setEntry.deleteMany({ where: { exerciseInstance: { workout } } }),
+    prisma.exerciseInstance.deleteMany({ where: { workout } }),
+    prisma.workout.deleteMany({ where: workout }),
+  ]);
+  revalidateTag(workoutsTag(userId), { expire: 0 });
+  return new NextResponse(null, { status: 204 });
+}

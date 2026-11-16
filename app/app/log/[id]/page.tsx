@@ -12,6 +12,7 @@ import { PR_LABEL, prKinds } from "@/lib/prs";
 import { formatDayLabel, formatIn, formatTime, safeTimeZone, TZ_COOKIE } from "@/lib/time";
 import { durationMinutes, e1rmKg, exerciseName, formatLoad, formatNumber, toKg } from "@/lib/lift";
 import StatGrid from "@/components/StatGrid";
+import DeleteWorkout from "@/components/DeleteWorkout";
 
 export const metadata: Metadata = { title: "Workout" };
 
@@ -91,6 +92,8 @@ export default async function WorkoutDetailPage({ params }: { params: Promise<{ 
           </article>
         );
       })}
+
+      <DeleteWorkout id={workout.id} />
     </section>
   );
 }
