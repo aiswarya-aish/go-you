@@ -2,7 +2,7 @@ import type { AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcrypt";
 import { prisma } from "@/lib/prisma";
-import { clientIp, hashEmail, hashIp, isEmail, normalizeEmail } from "@/lib/account";
+import { clientIp, hashEmail, hashIp, isEmail, normalizeEmail, openName } from "@/lib/account";
 import { atLimit, hit } from "@/lib/rate-limit";
 
 const NO_ACCOUNT_HASH = "$2b$10$LLKoCAKY7e8P4M9yhfWbu.5sovi89VO5s4QqrUQ1o3ckcL0utOjt2"; // bcrypt of a throwaway string, cost 10 like real ones
@@ -40,8 +40,8 @@ export const authOptions: AuthOptions = {
           if (over.some(Boolean)) throw new Error("TooMany");
           return null;
         }
-        // The email rides in the encrypted session cookie only (shown under Account); the database never has it.
-        return { id: user.id, email };
+        // The email and the opened name ride in the encrypted session cookie only; the database never has either in clear (P3-05).
+        return { id: user.id, email, name: openName(email, user.name) };
       },
     }),
   ],

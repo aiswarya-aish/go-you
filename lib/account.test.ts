@@ -31,3 +31,20 @@ test("client ip: Vercel header first, then the first forwarded hop", () => {
   assert.equal(a.clientIp(h({ "x-forwarded-for": "2.2.2.2, 3.3.3.3" })), "2.2.2.2");
   assert.equal(a.clientIp(h({})), "local");
 });
+
+test("a typed name is sealed per email and opens only with that email; call signs stay plain", async () => {
+  const sealed = a.sealName("anna@example.com", "Anna");
+  assert.match(sealed, /^v1\./);
+  assert.ok(!sealed.includes("Anna"));
+  assert.notEqual(sealed, a.sealName("anna@example.com", "Anna")); // fresh IV every time
+  assert.equal(a.openName(" ANNA@example.com", sealed), "Anna");
+  assert.equal(a.openName("bob@example.com", sealed), null);
+  assert.equal(a.sealName("anna@example.com", "GRANITE"), "GRANITE");
+  assert.equal(a.openName("anna@example.com", "GRANITE"), "GRANITE");
+  assert.equal(a.openName("anna@example.com", null), null);
+  const n = await import("./name.ts");
+  assert.equal(n.nameProblem(n.cleanName("  Zoë   O'Neil ")), null);
+  assert.ok(n.nameProblem("Thirteen chars"));
+  assert.ok(n.nameProblem("<script>"));
+  assert.notEqual(n.pickCallSign("GRANITE"), "GRANITE");
+});

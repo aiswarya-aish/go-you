@@ -1,6 +1,7 @@
 // Accounts (P3-01, DD-053): the email is only ever stored as a keyed hash; codes and IPs are hashed the same way.
 // Pure apart from node:crypto, so node's test runner can run it.
-import { createHmac, randomInt } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomInt } from "node:crypto";
+import { CALL_SIGNS } from "./name.ts";
 
 export const CODE_TTL_MS = 10 * 60_000;
 export const CODE_TRIES = 5; // wrong codes before a new one must be sent
@@ -34,6 +35,30 @@ export function passwordProblem(pw: string): string | null {
   if (pw.length > PASSWORD_MAX) return `Use at most ${PASSWORD_MAX} characters.`;
   if (COMMON.has(pw.toLowerCase())) return "That password is too common. Pick another.";
   return null;
+}
+
+// P3-05: a typed name is sealed (AES-256-GCM) with a key from the secret AND the email, so the DB alone, or the secret alone,
+// cannot read it; the server opens it only at sign-in, when it holds the email. Call signs stay plain (they identify nobody).
+const nameKey = (email: string) => createHmac("sha256", secret()).update(`name:${normalizeEmail(email)}`).digest();
+
+export function sealName(email: string, name: string): string {
+  if (CALL_SIGNS.includes(name)) return name;
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", nameKey(email), iv);
+  const body = Buffer.concat([cipher.update(name, "utf8"), cipher.final()]);
+  return "v1." + Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64url");
+}
+
+export function openName(email: string, stored: string | null): string | null {
+  if (!stored?.startsWith("v1.")) return stored;
+  try {
+    const raw = Buffer.from(stored.slice(3), "base64url");
+    const decipher = createDecipheriv("aes-256-gcm", nameKey(email), raw.subarray(0, 12));
+    decipher.setAuthTag(raw.subarray(12, 28));
+    return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+  } catch {
+    return null; // wrong secret: sign-in still works, the name is just missing
+  }
 }
 
 // The caller's IP as Vercel reports it; one bucket for everything local.

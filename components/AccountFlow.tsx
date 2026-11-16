@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SegmentedBar from "@/components/SegmentedBar";
 import { EMAIL_KEY, getCsrf, signInRequest } from "@/lib/sign-in";
+import { cleanName, nameProblem, pickCallSign } from "@/lib/name";
 import { rememberTimeZone } from "@/lib/time";
 import { useNow } from "@/lib/useNow";
 
@@ -18,7 +19,7 @@ const TITLE: Record<Mode, Record<Step, string>> = {
   signup: {
     email: "Create account",
     code: "Check your email",
-    password: "Set a password",
+    password: "Last step",
   },
   reset: {
     email: "Reset password",
@@ -61,6 +62,9 @@ export default function AccountFlow({ mode }: { mode: Mode }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
+  // P3-05: the name is optional; left empty, the account goes by this call sign (Another rerolls it).
+  const [name, setName] = useState("");
+  const [callSign, setCallSign] = useState(() => pickCallSign());
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -109,8 +113,16 @@ export default function AccountFlow({ mode }: { mode: Mode }) {
   }
 
   async function savePassword() {
+    const typed = cleanName(name);
+    const badName = mode === "signup" && typed ? nameProblem(typed) : null;
+    if (badName) return setError(badName);
     setBusy(true);
-    const r = await post("/api/account/password", { email, code, password });
+    const r = await post("/api/account/password", {
+      email,
+      code,
+      password,
+      ...(mode === "signup" && { name: typed || callSign }),
+    });
     if (!r.ok) {
       setBusy(false);
       if (r.expired) {
@@ -186,7 +198,9 @@ export default function AccountFlow({ mode }: { mode: Mode }) {
                 </>
               )}
               {step === "password" &&
-                "At least 8 characters. A short sentence you will remember works well."}
+                (mode === "signup"
+                  ? "Pick a name, then a password of at least 8 characters. A short sentence you will remember works well."
+                  : "At least 8 characters. A short sentence you will remember works well.")}
             </p>
           </header>
 
@@ -234,6 +248,37 @@ export default function AccountFlow({ mode }: { mode: Mode }) {
             </div>
           )}
 
+          {step === "password" && mode === "signup" && (
+            <div className="space-y-2">
+              <label htmlFor="name" className="label block">
+                Name <span className="text-[var(--muted)]">· optional</span>
+              </label>
+              <input
+                id="name"
+                autoComplete="nickname"
+                autoCapitalize="words"
+                autoFocus
+                placeholder={callSign}
+                value={name}
+                onChange={(e) => edit(setName)(e.target.value)}
+                aria-describedby="name-hint"
+                className="field h-12"
+              />
+              <div className="flex items-center justify-between gap-3">
+                <p id="name-hint" aria-live="polite" className="text-sm text-[var(--muted)]">
+                  Left empty, you go by <span className="font-semibold text-[var(--fg)]">{callSign}</span>.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCallSign((c) => pickCallSign(c))}
+                  className="press label -mr-1 flex min-h-[var(--tap)] shrink-0 items-center px-1 text-[var(--fg)]"
+                >
+                  Another
+                </button>
+              </div>
+            </div>
+          )}
+
           {step === "password" && (
             <div className="space-y-2">
               {/* Lets password managers save the new password under the right email. */}
@@ -252,7 +297,7 @@ export default function AccountFlow({ mode }: { mode: Mode }) {
                   id="pwd"
                   type={show ? "text" : "password"}
                   autoComplete="new-password"
-                  autoFocus
+                  autoFocus={mode === "reset"}
                   value={password}
                   onChange={(e) => edit(setPassword)(e.target.value)}
                   aria-invalid={!!error}

@@ -13,6 +13,7 @@ model User {
   id           String    @id
   emailHash    String?   @unique
   passwordHash String
+  name         String? // P3-05: a call sign as plain text, or "v1." + a typed name sealed with the email (lib/account.ts)
   createdAt    DateTime  @default(now())
   workouts     Workout[]
   exercises    Exercise[]
