@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { liftHistory, pointsSince } from "./lift-history.ts";
+import { liftBoard, liftHistory, pointsSince } from "./lift-history.ts";
 
 const set = (id: string, reps: number, weight: number, unit = "kg") => ({ id, reps, weight, unit });
 
@@ -28,4 +28,21 @@ test("empty history and range filtering", () => {
   const now = Date.parse("2026-11-15T00:00:00Z");
   assert.deepEqual(pointsSince(pts, 90, now).map((p) => p.workoutId), ["b"]);
   assert.deepEqual(pointsSince(pts, null, now).map((p) => p.workoutId), ["a", "b"]);
+});
+
+test("board: one row per lift, freshest PR first, bodyweight lifts keep their reps", () => {
+  const s = (workoutId: string, day: string, sets: ReturnType<typeof set>[]) => ({ workoutId, startedAt: `2026-${day}T10:00:00Z`, sets });
+  const board = liftBoard({
+    bench: [s("a", "09-01", [set("1", 5, 100)]), s("b", "10-01", [set("2", 3, 110)])], // weight PR on 1 Oct
+    squat: [s("c", "09-02", [set("3", 5, 120)]), s("d", "11-01", [set("4", 8, 120)])], // rep PR on 1 Nov
+    pullup: [s("e", "09-03", [set("5", 8, 0)]), s("f", "09-10", [set("6", 6, 0)])], // nothing beaten yet
+    curl: [s("g", "09-04", [])], // no sets: no row
+  });
+  assert.deepEqual(board.map((r) => [r.exerciseId, r.lastPrAt?.slice(0, 10) ?? null]), [
+    ["squat", "2026-11-01"],
+    ["bench", "2026-10-01"],
+    ["pullup", null],
+  ]);
+  assert.deepEqual([board[1].heavyKg, board[1].heavyReps], [110, 3]);
+  assert.deepEqual([board[2].e1rmKg, board[2].bestReps], [0, 8]);
 });

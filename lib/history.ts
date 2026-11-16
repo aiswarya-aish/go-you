@@ -5,7 +5,7 @@ import { workoutsTag } from "@/lib/stats";
 import { exerciseName, KG_PER_LB } from "@/lib/lift";
 import { buildTemplates, TEMPLATE_UNLOCK_SESSIONS, type ProgramTemplate } from "@/lib/templates";
 import { bestsFrom, type Bests } from "@/lib/prs";
-import type { LiftSession } from "@/lib/lift-history";
+import { liftBoard, type BoardRow, type LiftSession } from "@/lib/lift-history";
 
 export type LastSet = { reps: number; weight: number; unit: string };
 export type ExerciseHistory = {
@@ -68,18 +68,9 @@ async function load(userId: string): Promise<ExerciseHistory> {
 export const getExerciseHistory = (userId: string) =>
   unstable_cache(() => load(userId), ["history", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
 
-// Every session of one lift, oldest first (P2-02 lift page). One joined query; an exercise done twice in a workout is one session.
-async function loadLift(userId: string, slug: string): Promise<LiftSession[]> {
-  const rows = await prisma.exerciseInstance.findMany({
-    where: { exerciseId: slug, workout: { userId } },
-    orderBy: [{ workout: { startedAt: "asc" } }, { order: "asc" }],
-    relationLoadStrategy: "join",
-    select: {
-      workoutId: true,
-      workout: { select: { startedAt: true } },
-      sets: { orderBy: { createdAt: "asc" }, select: { id: true, reps: true, weight: true, unit: true } },
-    },
-  });
+// Joined exercise rows (oldest first) → sessions; one exercise may appear twice in a workout, so its sets merge.
+type LiftRow = { workoutId: string; workout: { startedAt: Date }; sets: LiftSession["sets"] };
+function toSessions(rows: LiftRow[]): LiftSession[] {
   const sessions: LiftSession[] = [];
   for (const r of rows) {
     const last = sessions.at(-1);
@@ -88,6 +79,40 @@ async function loadLift(userId: string, slug: string): Promise<LiftSession[]> {
   }
   return sessions;
 }
+
+const liftSelect = {
+  workoutId: true,
+  workout: { select: { startedAt: true } },
+  sets: { orderBy: { createdAt: "asc" }, select: { id: true, reps: true, weight: true, unit: true } },
+} as const;
+const oldestFirst = [{ workout: { startedAt: "asc" } }, { order: "asc" }] as const;
+
+// Every session of one lift, oldest first (P2-02 lift page). One joined query; an exercise done twice in a workout is one session.
+async function loadLift(userId: string, slug: string): Promise<LiftSession[]> {
+  const rows = await prisma.exerciseInstance.findMany({
+    where: { exerciseId: slug, workout: { userId } },
+    orderBy: [...oldestFirst],
+    relationLoadStrategy: "join",
+    select: liftSelect,
+  });
+  return toSessions(rows);
+}
+
+// The PR board (P2-03): every lift's history in one query, reduced to one small row per lift before it is cached.
+async function loadBoard(userId: string): Promise<BoardRow[]> {
+  const rows = await prisma.exerciseInstance.findMany({
+    where: { workout: { userId } },
+    orderBy: [...oldestFirst],
+    relationLoadStrategy: "join",
+    select: { exerciseId: true, ...liftSelect },
+  });
+  const byLift: Record<string, LiftRow[]> = {};
+  for (const r of rows) (byLift[r.exerciseId] ??= []).push(r);
+  return liftBoard(Object.fromEntries(Object.entries(byLift).map(([id, list]) => [id, toSessions(list)])));
+}
+
+export const getBoard = (userId: string) =>
+  unstable_cache(() => loadBoard(userId), ["board", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
 
 export const getLiftSessions = (userId: string, slug: string) =>
   unstable_cache(() => loadLift(userId, slug), ["lift", userId, slug], { tags: [workoutsTag(userId)], revalidate: 3600 })();
