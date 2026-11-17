@@ -88,6 +88,16 @@ output,
     @apply border border-current px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em];
   }
 
+  /* A unit beside its number: "107.9 kg", "+2 reps" (DD-058). Muted and smaller, so the number leads. */
+  .unit {
+    @apply ml-[0.2em] text-[0.55em] font-semibold tracking-normal text-[var(--muted)];
+  }
+
+  /* A section start on Stats: a heavy rule and a plain title (DD-058). */
+  .section-head {
+    @apply flex items-baseline justify-between gap-3 border-t-2 border-[var(--fg)] pt-3 text-xl font-bold tracking-[-0.01em];
+  }
+
   .field {
     @apply w-full border border-[var(--control)] bg-transparent px-3 text-base outline-none;
     min-height: var(--tap);

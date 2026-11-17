@@ -45,13 +45,23 @@ export type BoardRow = {
   heavyReps: number;
   bestReps: number;
   lastPrAt: string | null; // null: one session so far (the baseline), nothing beaten yet
+  bw: boolean; // mostly bodyweight sets: measured in reps, not est. 1RM (a +5 kg pull-up is not a 7 kg lift)
+  points: [t: number, v: number][]; // per session, oldest first: est. 1RM kg, or most reps when bw (Stats window, DD-058)
 };
 
-export function liftBoard(byLift: Record<string, LiftSession[]>): BoardRow[] {
+// The board, plus for Log (from the same pass over the history): how many PR sets each workout set ("2 PR" tag) and when
+// every workout started (the month tapes).
+export function liftBoard(byLift: Record<string, LiftSession[]>) {
+  const prsByWorkout: Record<string, number> = {};
+  const startedAt: Record<string, string> = {};
   const rows = Object.entries(byLift).flatMap(([exerciseId, sessions]) => {
+    for (const s of sessions) startedAt[s.workoutId] = s.startedAt;
     const h = liftHistory(sessions);
+    for (const pr of h.prs) prsByWorkout[pr.workoutId] = (prsByWorkout[pr.workoutId] ?? 0) + 1;
     if (!h.heaviest) return [];
-    const reps = sessions.flatMap((s) => s.sets.map((x) => x.reps));
+    const all = sessions.flatMap((s) => s.sets);
+    const reps = all.map((x) => x.reps);
+    const bw = all.filter((x) => x.weight === 0).length * 2 > all.length;
     return [{
       exerciseId,
       e1rmKg: h.bestE1rmKg,
@@ -59,9 +69,23 @@ export function liftBoard(byLift: Record<string, LiftSession[]>): BoardRow[] {
       heavyReps: h.heaviest.reps,
       bestReps: Math.max(...reps),
       lastPrAt: h.prs[0]?.startedAt ?? null,
+      bw,
+      points: sessions
+        .filter((s) => s.sets.length)
+        .map((s): [number, number] => [Date.parse(s.startedAt), bw ? Math.max(...s.sets.map((x) => x.reps)) : Math.max(...s.sets.map((x) => e1rmKg(x.weight, x.reps, x.unit)))]),
     }];
   });
-  return rows.sort((a, b) => (b.lastPrAt ?? "").localeCompare(a.lastPrAt ?? "") || b.e1rmKg - a.e1rmKg);
+  rows.sort((a, b) => (b.lastPrAt ?? "").localeCompare(a.lastPrAt ?? "") || b.e1rmKg - a.e1rmKg);
+  return { rows, prsByWorkout, startedAt };
+}
+
+// One lift through the Stats window (DD-058): its best inside the window minus its best before it. A lift new in the window
+// (or the ALL window) is measured against its own first session. null: not trained in the window, or nothing to compare yet.
+export function liftChange(points: BoardRow["points"], since: number | null): number | null {
+  const before = points.filter(([t]) => since !== null && t < since).map(([, v]) => v);
+  const inside = points.filter(([t]) => since === null || t >= since).map(([, v]) => v);
+  const base = before.length ? Math.max(...before) : inside.shift();
+  return base === undefined || !inside.length ? null : Math.max(...inside) - base;
 }
 
 // Points inside the last `days` (null = all), for the chart's range switch.
