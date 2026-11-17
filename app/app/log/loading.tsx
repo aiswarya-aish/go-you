@@ -1,5 +1,3 @@
-import LoadingRows from "@/components/LoadingRows";
+import { LogSkeleton } from "@/components/Skeletons";
 
-export default function Loading() {
-  return <LoadingRows title="LOG" />;
-}
+export default LogSkeleton;

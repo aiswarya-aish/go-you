@@ -1,5 +1,3 @@
-import LoadingRows from "@/components/LoadingRows";
+import { GoalsSkeleton } from "@/components/Skeletons";
 
-export default function Loading() {
-  return <LoadingRows title="GOALS" />;
-}
+export default GoalsSkeleton;
