@@ -1,5 +1,3 @@
-import LoadingRows from "@/components/LoadingRows";
+import { LiftSkeleton } from "@/components/Skeletons";
 
-export default function Loading() {
-  return <LoadingRows title="LIFT" />;
-}
+export default LiftSkeleton;

@@ -104,6 +104,18 @@ output,
   }
 }
 
+/* Loading skeletons: a placeholder block breathes (opacity only, no gradient sweep, DD-027). It waits 300ms first, so a fast
+   load swaps in before anything moves, and every block shares one phase so the page breathes as one. */
+@keyframes skel {
+  50% {
+    opacity: 0.45;
+  }
+}
+.skel {
+  background: var(--divider);
+  animation: skel 1.6s ease-in-out 300ms infinite;
+}
+
 /* Set stamp: a new set row flashes inverted once (120ms hold, 160ms return). */
 @keyframes stamp {
   0%,
@@ -171,6 +183,9 @@ output,
 @media (prefers-reduced-motion: reduce) {
   .press:active:not(:disabled) {
     transform: none;
+  }
+  .skel {
+    animation: none;
   }
   .sheet,
   .sheet[data-open="false"] {
