@@ -1,23 +1,27 @@
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { dayIn, weekStart } from "@/lib/time";
-import { e1rmKg, toKg, type Unit } from "@/lib/lift";
+import { dayIn, monthStart, weekStart } from "@/lib/time";
+import { toKg, type Unit } from "@/lib/lift";
 import { prKindsInRange, type Bests, type Pr } from "@/lib/prs";
 import { bestsByExercise } from "@/lib/history"; // history imports workoutsTag from here; both are only used inside functions
 
-export type Range = "7d" | "30d" | "90d" | "all";
+// The Stats window (DD-058): everything on the page is read through it.
+export type Range = "1m" | "3m" | "1y" | "all";
 
 export const workoutsTag = (userId: string) => `workouts:${userId}`;
 
-export const resolveRange = (v: string | undefined): Range =>
-  v === "7d" || v === "30d" || v === "90d" || v === "all" ? v : "90d";
+export const resolveRange = (v: string | undefined): Range => (v === "1m" || v === "1y" || v === "all" ? v : "3m");
 export const resolveUnit = (v: string | undefined): Unit => (v === "lb" ? "lb" : "kg");
 
-const DAYS: Record<Exclude<Range, "all">, number> = { "7d": 7, "30d": 30, "90d": 90 };
+const DAYS: Record<Exclude<Range, "all">, number> = { "1m": 30, "3m": 91, "1y": 365 };
+export const rangeStart = (range: Range, now = Date.now()) => (range === "all" ? null : new Date(now - DAYS[range] * 86400000));
+
+const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+const nextMonth = (day: string) => addDays(`${day.slice(0, 8)}28`, 7).slice(0, 8) + "01";
 
 // All values in kg; the page converts to the display unit.
 async function computeStats(userId: string, range: Range, tz: string) {
-  const since = range === "all" ? null : new Date(Date.now() - DAYS[range] * 86400000);
+  const since = rangeStart(range);
   // PRs in the range are measured against the all-time record before it (P2-01), fetched beside the range's workouts.
   const [workouts, before] = await Promise.all([
     prisma.workout.findMany({
@@ -43,8 +47,10 @@ async function computeStats(userId: string, range: Range, tz: string) {
   let totalVolumeKg = 0;
   let totalMinutes = 0;
   let completed = 0;
-  const top = new Map<string, { sets: number; workouts: Set<string>; bestWeightKg: number; best1rmKg: number }>();
-  const weekly = new Map<string, number>();
+  // Volume per week (1M, 3M) or per month (1Y, ALL), every bucket kept so empty weeks show as gaps.
+  const monthly = range === "1y" || range === "all";
+  const bucketOf = (d: Date) => (monthly ? monthStart(day(d)) : weekStart(day(d)));
+  const volume = new Map<string, { kg: number; workouts: number }>();
   type RangeSet = { id: string; reps: number; weight: number; unit: string; createdAt: Date; workoutId: string };
   const setsByExercise = new Map<string, RangeSet[]>(); // in time order, for the PR pass below
   const prs: ({ occurredAt: string; exerciseId: string; setId: string; reps: number; weightKg: number } & Pr)[] = [];
@@ -54,19 +60,13 @@ async function computeStats(userId: string, range: Range, tz: string) {
       totalMinutes += Math.max(0, (w.endedAt.getTime() - w.startedAt.getTime()) / 60000);
       completed += 1;
     }
-    const week = weekStart(day(w.startedAt));
+    const bucket = volume.get(bucketOf(w.startedAt)) ?? volume.set(bucketOf(w.startedAt), { kg: 0, workouts: 0 }).get(bucketOf(w.startedAt))!;
+    bucket.workouts += 1;
     for (const ex of w.exercises) {
-      const t = top.get(ex.exerciseId) ?? { sets: 0, workouts: new Set<string>(), bestWeightKg: 0, best1rmKg: 0 };
-      top.set(ex.exerciseId, t);
-      t.workouts.add(w.id);
       for (const s of ex.sets) {
         const kg = toKg(s.weight, s.unit);
-        const e1rm = e1rmKg(s.weight, s.reps, s.unit);
         totalVolumeKg += kg * s.reps;
-        weekly.set(week, (weekly.get(week) ?? 0) + kg * s.reps);
-        t.sets += 1;
-        t.bestWeightKg = Math.max(t.bestWeightKg, kg);
-        t.best1rmKg = Math.max(t.best1rmKg, e1rm);
+        bucket.kg += kg * s.reps;
         const list = setsByExercise.get(ex.exerciseId) ?? setsByExercise.set(ex.exerciseId, []).get(ex.exerciseId)!;
         list.push({ ...s, workoutId: w.id });
       }
@@ -78,24 +78,31 @@ async function computeStats(userId: string, range: Range, tz: string) {
     for (const { set: s, pr } of prKindsInRange(list, before[exerciseId]))
       prs.push({ occurredAt: s.createdAt.toISOString(), exerciseId, setId: s.id, reps: s.reps, weightKg: toKg(s.weight, s.unit), ...pr });
 
+  const buckets: { start: string; kg: number; workouts: number }[] = [];
+  const first = since ?? workouts[0]?.startedAt;
+  if (first) {
+    const now = bucketOf(new Date());
+    for (let k = bucketOf(first); k <= now; k = monthly ? nextMonth(k) : addDays(k, 7)) buckets.push({ start: k, ...(volume.get(k) ?? { kg: 0, workouts: 0 }) });
+  }
+
   return {
     kpis: {
       workoutsCount: workouts.length,
       totalVolumeKg,
       avgSessionLengthMinutes: completed > 0 ? totalMinutes / completed : 0,
+      days: first ? Math.max(1, (Date.now() - first.getTime()) / 86400000) : 0, // the window's length, for "a week"
     },
-    topExercises: [...top.entries()]
-      .map(([exerciseId, v]) => ({ exerciseId, setCount: v.sets, workoutCount: v.workouts.size, bestWeightKg: v.bestWeightKg, best1rmKg: v.best1rmKg }))
-      .sort((a, b) => b.setCount - a.setCount)
-      .slice(0, 8),
+    prCount: prs.length,
     recentPrs: prs.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, 12),
-    volumeTrend: [...weekly.entries()].map(([weekStart, volumeKg]) => ({ weekStart, volumeKg })).sort((a, b) => a.weekStart.localeCompare(b.weekStart)),
+    monthly,
+    buckets, // oldest first; the last one is still running
   };
 }
 
-// shortcut: relative ranges (7d/30d/90d) can be up to 1h stale between saves; saving a workout clears the cache at once.
+// "stats-2": new shape (DD-058); the data cache outlives deploys.
+// shortcut: relative ranges (1m/3m/1y) can be up to 1h stale between saves; saving a workout clears the cache at once.
 export const getStats = (userId: string, range: Range, tz: string) =>
-  unstable_cache(() => computeStats(userId, range, tz), ["stats", userId, range, tz], {
+  unstable_cache(() => computeStats(userId, range, tz), ["stats-2", userId, range, tz], {
     tags: [workoutsTag(userId)],
     revalidate: 3600,
   })();
