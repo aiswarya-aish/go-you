@@ -1,5 +1,3 @@
-import LoadingRows from "@/components/LoadingRows";
+import { StatsSkeleton } from "@/components/Skeletons";
 
-export default function Loading() {
-  return <LoadingRows title="STATS" />;
-}
+export default StatsSkeleton;

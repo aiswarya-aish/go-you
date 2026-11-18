@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { liftBoard, liftHistory, pointsSince } from "./lift-history.ts";
+import { liftBoard, liftChange, liftHistory, pointsSince } from "./lift-history.ts";
 
 const set = (id: string, reps: number, weight: number, unit = "kg") => ({ id, reps, weight, unit });
 
@@ -32,7 +32,7 @@ test("empty history and range filtering", () => {
 
 test("board: one row per lift, freshest PR first, bodyweight lifts keep their reps", () => {
   const s = (workoutId: string, day: string, sets: ReturnType<typeof set>[]) => ({ workoutId, startedAt: `2026-${day}T10:00:00Z`, sets });
-  const board = liftBoard({
+  const { rows: board, prsByWorkout } = liftBoard({
     bench: [s("a", "09-01", [set("1", 5, 100)]), s("b", "10-01", [set("2", 3, 110)])], // weight PR on 1 Oct
     squat: [s("c", "09-02", [set("3", 5, 120)]), s("d", "11-01", [set("4", 8, 120)])], // rep PR on 1 Nov
     pullup: [s("e", "09-03", [set("5", 8, 0)]), s("f", "09-10", [set("6", 6, 0)])], // nothing beaten yet
@@ -45,4 +45,17 @@ test("board: one row per lift, freshest PR first, bodyweight lifts keep their re
   ]);
   assert.deepEqual([board[1].heavyKg, board[1].heavyReps], [110, 3]);
   assert.deepEqual([board[2].e1rmKg, board[2].bestReps], [0, 8]);
+  assert.deepEqual(prsByWorkout, { b: 1, d: 1 });
+  assert.equal(board[2].bw, true); // pull-ups are measured in reps
+  assert.deepEqual(board[2].points.map(([, v]) => v), [8, 6]);
+});
+
+test("window change: best inside minus best before; new lifts against their first session", () => {
+  const p: [number, number][] = [[1, 100], [2, 110], [3, 105], [4, 112]];
+  assert.equal(liftChange(p, 3), 2); // 112 vs 110 before
+  assert.equal(liftChange(p, 2), 12); // window starts at the 110 session: 112 vs 100 before
+  assert.equal(liftChange(p, null), 12); // ALL: vs the first session
+  assert.equal(liftChange([[5, 90]], 3), null); // one session in the window, nothing before
+  assert.equal(liftChange(p, 9), null); // not trained in the window
+  assert.equal(liftChange([[1, 100], [5, 95]], 3), -5); // went down
 });

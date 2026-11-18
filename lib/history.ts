@@ -5,7 +5,7 @@ import { workoutsTag } from "@/lib/stats";
 import { exerciseName, KG_PER_LB } from "@/lib/lift";
 import { buildTemplates, TEMPLATE_UNLOCK_SESSIONS, type ProgramTemplate } from "@/lib/templates";
 import { bestsFrom, type Bests } from "@/lib/prs";
-import { liftBoard, type BoardRow, type LiftSession } from "@/lib/lift-history";
+import { liftBoard, type LiftSession } from "@/lib/lift-history";
 
 export type LastSet = { reps: number; weight: number; unit: string };
 export type ExerciseHistory = {
@@ -98,8 +98,8 @@ async function loadLift(userId: string, slug: string): Promise<LiftSession[]> {
   return toSessions(rows);
 }
 
-// The PR board (P2-03): every lift's history in one query, reduced to one small row per lift before it is cached.
-async function loadBoard(userId: string): Promise<BoardRow[]> {
+// The PR board (P2-03) + PR sets per workout (Log): every lift's history in one query, reduced before it is cached.
+async function loadBoard(userId: string): Promise<ReturnType<typeof liftBoard>> {
   const rows = await prisma.exerciseInstance.findMany({
     where: { workout: { userId } },
     orderBy: [...oldestFirst],
@@ -112,7 +112,8 @@ async function loadBoard(userId: string): Promise<BoardRow[]> {
 }
 
 export const getBoard = (userId: string) =>
-  unstable_cache(() => loadBoard(userId), ["board", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
+  // "board-2": the cached shape changed (DD-058); the data cache outlives deploys, so an old entry must never be read as the new one.
+  unstable_cache(() => loadBoard(userId), ["board-2", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
 
 export const getLiftSessions = (userId: string, slug: string) =>
   unstable_cache(() => loadLift(userId, slug), ["lift", userId, slug], { tags: [workoutsTag(userId)], revalidate: 3600 })();

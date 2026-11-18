@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-// Only weights that are used: no faux bold (Space Grotesk tops out at 700).
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+// Self-hosted (the offline screen's file): builds never fetch Google Fonts, whose newer URLs broke a Vercel build (2026-11-16).
+// One variable file, latin, weights 300-700 (Space Grotesk tops out at 700, so no faux bold).
+const spaceGrotesk = localFont({
+  src: "../public/fonts/space-grotesk-latin.woff2",
+  weight: "300 700",
   variable: "--font-sans",
 });
 
