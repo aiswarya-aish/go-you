@@ -21,3 +21,6 @@ export function nameProblem(name: string): string | null {
   if (!/^[\p{L}\p{M}\p{N} .'-]+$/u.test(name)) return "Use letters, numbers, spaces, dots, dashes or apostrophes.";
   return null;
 }
+
+// P3-08: the brand carries the lifter's name. GO—YOU until there is one (accounts made before P3-05).
+export const brand = (name?: string | null) => `GO—${name ?? "YOU"}`;

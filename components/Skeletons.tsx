@@ -59,7 +59,12 @@ export function TrainSkeleton() {
     <Busy what="train" className="space-y-10">
       <header className="space-y-2">
         <p className="label">No active workout</p>
-        <h1 className="display text-5xl">Train</h1>
+        {/* P3-08: the real title is GO—NAME. The name is data, so only it is a block; a long name later shrinks the line (sized to fit). */}
+        <h1 className="display whitespace-nowrap text-[3rem]">
+          <span className="sr-only">Train</span>
+          <span aria-hidden="true">GO—</span>
+          <span aria-hidden="true" className="skel inline-block h-[0.7em] w-[2.6em]" />
+        </h1>
       </header>
       <div aria-hidden="true" className="btn btn-primary btn-lg w-full">
         Start blank

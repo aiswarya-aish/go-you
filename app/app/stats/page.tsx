@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { formatDayMonth, formatIn, safeTimeZone, TZ_COOKIE } from "@/lib/time";
-import { exerciseName, formatLoad, formatNumber, fromKg, type Unit } from "@/lib/lift";
+import { exerciseName, formatLoad, formatNumber, fromKg, type Unit, UNIT_COOKIE } from "@/lib/lift";
 import { getStats, rangeStart, resolveRange, resolveUnit, type Range } from "@/lib/stats";
 import { getBoard, getExerciseNames } from "@/lib/history";
 import { isRecent, liftChange, type BoardRow } from "@/lib/lift-history";
@@ -50,7 +50,7 @@ function Spark({ points: all }: { points: [number, number][] }) {
 export default async function StatsPage({ searchParams }: { searchParams: Promise<{ range?: string; unit?: string }> }) {
   const [session, jar, params] = await Promise.all([getServerSession(authOptions), cookies(), searchParams]);
   const range = resolveRange(params.range);
-  const unit = resolveUnit(params.unit);
+  const unit = resolveUnit(params.unit ?? jar.get(UNIT_COOKIE)?.value);
   const tz = safeTimeZone(jar.get(TZ_COOKIE)?.value);
   const [data, names, { rows: board }] = await Promise.all([
     getStats(session!.user.id, range, tz),

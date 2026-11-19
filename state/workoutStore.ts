@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { Workout, ExerciseInstance, SetEntry } from "@/domain/workout";
-import type { Unit } from "@/lib/lift";
+import { rememberUnit, type Unit } from "@/lib/lift";
 import { DEFAULT_REST } from "@/lib/rest";
 
 export type ActiveWorkout = {
@@ -53,7 +53,10 @@ export const useWorkoutStore = create<WorkoutState>()(
         unit: "kg",
         restTarget: DEFAULT_REST,
 
-        setUnit: (unit) => set({ unit }),
+        setUnit: (unit) => {
+          rememberUnit(unit);
+          set({ unit });
+        },
         setRestTarget: (restTarget) => set({ restTarget }),
 
         startWorkout: (userId, title) =>
