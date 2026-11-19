@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { rememberTimeZone } from "@/lib/time";
+import { RENEWED_KEY } from "@/lib/sign-in";
 import { useWorkoutStore } from "@/state/workoutStore";
 import SignOutButton from "@/components/SignOutButton";
 
@@ -48,12 +49,24 @@ function NavList({ variant, live }: { variant: "side" | "tabs"; live: boolean })
   );
 }
 
+// P3-04: a session lasts 90 days from its last renewal, and reading it re-issues the cookie. Once a day is plenty;
+// sign-in stamps the day, so the first screen after it costs no extra request.
+function renewSession() {
+  try {
+    if (Date.now() - Number(localStorage.getItem(RENEWED_KEY)) < 86_400_000) return;
+    fetch("/api/auth/session")
+      .then((r) => r.ok && localStorage.setItem(RENEWED_KEY, String(Date.now())))
+      .catch(() => {});
+  } catch {}
+}
+
 export default function AppShell({ children, user }: { children: React.ReactNode; user: { email?: string | null } }) {
   const live = useWorkoutStore((s) => !!s.activeWorkout);
 
   useEffect(() => {
     rememberTimeZone();
     useWorkoutStore.persist.rehydrate();
+    renewSession();
     // Offline Train + installability (DD-039). Production only, so dev reloads never serve a stale copy.
     if (process.env.NODE_ENV === "production") navigator.serviceWorker?.register("/sw.js").catch(() => {});
   }, []);

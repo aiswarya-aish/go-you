@@ -153,6 +153,11 @@ output,
   animation-delay: calc(120ms + var(--i, 0) * 60ms);
 }
 
+/* Account flow: each step rises in once (P3-01). Same move as .rise, shorter: it is a screen change, not a reward. */
+.step {
+  animation: rise 220ms var(--ease-out) both;
+}
+
 /* Bottom sheet enters and leaves along the same path. */
 .sheet {
   transition: transform var(--dur-sheet) var(--ease-sheet), opacity var(--dur-sheet) var(--ease-sheet);
@@ -208,7 +213,8 @@ output,
     animation-duration: 400ms;
     animation-delay: 0ms;
   }
-  .rise {
+  .rise,
+  .step {
     animation-name: fade;
     animation-delay: 0ms;
   }
