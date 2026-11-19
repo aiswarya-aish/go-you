@@ -3,6 +3,11 @@ import { LIBRARY } from "./exercises.ts"; // relative: also loaded by node's tes
 
 export type Unit = "kg" | "lb";
 export const KG_PER_LB = 0.45359237;
+// P3-03: the chosen unit also sets the default for Stats and lift pages (server-rendered, so it rides in a cookie).
+export const UNIT_COOKIE = "unit";
+export const rememberUnit = (unit: Unit) => {
+  document.cookie = `${UNIT_COOKIE}=${unit}; path=/; max-age=31536000; samesite=lax`;
+};
 
 export const toKg = (weight: number, unit: string) => (unit === "lb" ? weight * KG_PER_LB : weight);
 export const fromKg = (kg: number, unit: string) => (unit === "lb" ? kg / KG_PER_LB : kg);

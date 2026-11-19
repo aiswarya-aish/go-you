@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { formatDayMonth, safeTimeZone, TZ_COOKIE } from "@/lib/time";
-import { exerciseName, formatLoad, formatNumber, fromKg, type Unit } from "@/lib/lift";
+import { exerciseName, formatLoad, formatNumber, fromKg, type Unit, UNIT_COOKIE } from "@/lib/lift";
 import { getStats, resolveRange, resolveUnit, type Range } from "@/lib/stats";
 import { getBoard, getExerciseNames } from "@/lib/history";
 import { isRecent, type BoardRow } from "@/lib/lift-history";
@@ -40,7 +40,7 @@ const href = (range: Range, unit: Unit) => `/app/stats?range=${range}&unit=${uni
 export default async function StatsPage({ searchParams }: { searchParams: Promise<{ range?: string; unit?: string }> }) {
   const [session, jar, params] = await Promise.all([getServerSession(authOptions), cookies(), searchParams]);
   const range = resolveRange(params.range);
-  const unit = resolveUnit(params.unit);
+  const unit = resolveUnit(params.unit ?? jar.get(UNIT_COOKIE)?.value);
   const tz = safeTimeZone(jar.get(TZ_COOKIE)?.value);
   const [data, names, board] = await Promise.all([
     getStats(session!.user.id, range, tz),

@@ -6,7 +6,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getExerciseNames, getLiftSessions } from "@/lib/history";
 import { liftHistory, pointsSince } from "@/lib/lift-history";
-import { exerciseName, formatLoad, formatNumber, fromKg, toKg } from "@/lib/lift";
+import { exerciseName, formatLoad, formatNumber, fromKg, toKg, UNIT_COOKIE } from "@/lib/lift";
 import { PR_LABEL, prGain } from "@/lib/prs";
 import { resolveUnit } from "@/lib/stats";
 import { formatDayLabel, formatDayMonth, safeTimeZone, TZ_COOKIE } from "@/lib/time";
@@ -35,7 +35,7 @@ export default async function LiftPage({
   if (!/^[a-z0-9_]{1,64}$/.test(slug)) notFound();
   const userId = session!.user.id;
   const tz = safeTimeZone(jar.get(TZ_COOKIE)?.value);
-  const unit = resolveUnit(sp.unit);
+  const unit = resolveUnit(sp.unit ?? jar.get(UNIT_COOKIE)?.value);
   const range = resolveRange(sp.range);
   const [sessions, names] = await Promise.all([getLiftSessions(userId, slug), getExerciseNames(userId)]);
   const lift = liftHistory(sessions);
