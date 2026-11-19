@@ -8,9 +8,11 @@ import type { ProgramTemplate } from "@/lib/templates";
 import type { ExerciseHistory } from "@/lib/history";
 import Logger, { type Receipt } from "@/components/Logger";
 import SegmentedBar from "@/components/SegmentedBar";
+import { brand } from "@/lib/name";
 
 export default function Dashboard({
   userId,
+  name,
   weeklyCount,
   monthlyCount,
   history,
@@ -18,6 +20,7 @@ export default function Dashboard({
   draft,
 }: {
   userId: string;
+  name?: string | null;
   weeklyCount: number;
   monthlyCount: number;
   history: ExerciseHistory;
@@ -75,9 +78,17 @@ export default function Dashboard({
         />
       )}
 
-      <header className="space-y-2">
+      <header className="space-y-2 [container-type:inline-size]">
         <p className="label">No active workout</p>
-        <h1 className="display text-5xl">Train</h1>
+        {/* P3-08: the brand is the Train title. One line, sized to fit: about 0.68em per letter after "GO—" (2.2em), capped at text-5xl.
+            shortcut: a 12-letter name of only W/M would still be clipped, upgrade to measuring the text if real names hit it. No animation: seen daily. */}
+        <h1
+          className="display overflow-x-clip whitespace-nowrap"
+          style={{ fontSize: `min(3rem, calc(100cqi / ${(2.2 + 0.68 * [...(name ?? "YOU")].length).toFixed(2)}))` }}
+        >
+          <span className="sr-only">Train</span>
+          <span aria-hidden="true">{brand(name)}</span>
+        </h1>
       </header>
 
       <button type="button" className="btn btn-primary btn-lg w-full" onClick={() => startWorkout(userId)}>

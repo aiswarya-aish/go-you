@@ -37,6 +37,7 @@ export default async function DashboardPage() {
   return (
     <Dashboard
       userId={userId}
+      name={session!.user.name}
       weeklyCount={days.filter((d) => d >= weekStart(today)).length}
       monthlyCount={days.filter((d) => d >= monthStart(today)).length}
       history={history}

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { rememberTimeZone } from "@/lib/time";
 import { RENEWED_KEY } from "@/lib/sign-in";
+import { brand } from "@/lib/name";
 import { useWorkoutStore } from "@/state/workoutStore";
 import SignOutButton from "@/components/SignOutButton";
 
@@ -60,7 +61,7 @@ function renewSession() {
   } catch {}
 }
 
-export default function AppShell({ children, user }: { children: React.ReactNode; user: { email?: string | null } }) {
+export default function AppShell({ children, user }: { children: React.ReactNode; user: { name?: string | null } }) {
   const live = useWorkoutStore((s) => !!s.activeWorkout);
 
   useEffect(() => {
@@ -84,7 +85,9 @@ export default function AppShell({ children, user }: { children: React.ReactNode
           <NavList variant="side" live={live} />
         </nav>
         <div className="mt-auto space-y-3 border-t border-[var(--divider)] pt-5 text-sm">
-          <div className="break-all text-[var(--muted)]">{user.email}</div>
+          <p className="label text-[var(--fg)]">
+            {brand(user.name)} <span className="text-[var(--muted)]">· signed in</span>
+          </p>
           <SignOutButton />
         </div>
       </aside>
