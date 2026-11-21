@@ -15,5 +15,5 @@ export default async function AppLayout({
     redirect("/");
   }
 
-  return <AppShell user={session.user}>{children}</AppShell>;
+  return <AppShell user={{ name: session.user.name }}>{children}</AppShell>;
 }

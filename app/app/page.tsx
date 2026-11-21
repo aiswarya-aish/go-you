@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getExerciseHistory, getTemplateProgress } from "@/lib/history";
 import { dayIn, monthStart, safeTimeZone, TZ_COOKIE, weekStart } from "@/lib/time";
 import Dashboard from "@/components/Dashboard";
+import type { ActiveWorkout } from "@/state/workoutStore";
 
 export const metadata: Metadata = { title: "Train" };
 
@@ -16,7 +17,7 @@ export default async function DashboardPage() {
 
   const today = day(new Date());
   const from = [weekStart(today), monthStart(today)].sort()[0];
-  const [recent, history, progress] = await Promise.all([
+  const [recent, history, progress, drafts] = await Promise.all([
     // Only this week's and month's start times (one day of margin for time-zone offsets), not the whole history.
     prisma.workout.findMany({
       where: { userId, startedAt: { gte: new Date(Date.parse(`${from}T00:00:00Z`) - 86400000) } },
@@ -24,16 +25,25 @@ export default async function DashboardPage() {
     }),
     getExerciseHistory(userId),
     getTemplateProgress(userId),
+    // An unfinished workout from the last day that was never saved (P1-01): offered to resume when this device has none.
+    // Tolerates a missing table, so a deploy before `migrate deploy` still renders Train.
+    prisma.$queryRaw<{ data: ActiveWorkout }[]>`
+      SELECT d.data FROM "WorkoutDraft" d
+      WHERE d."userId" = ${userId} AND d."updatedAt" > now() - interval '1 day'
+        AND NOT EXISTS (SELECT 1 FROM "Workout" w WHERE w.id = d."workoutId")`.catch(() => []),
   ]);
   const days = recent.map((w) => day(w.startedAt)).filter((d) => d >= from);
 
   return (
     <Dashboard
       userId={userId}
+      name={session!.user.name}
       weeklyCount={days.filter((d) => d >= weekStart(today)).length}
       monthlyCount={days.filter((d) => d >= monthStart(today)).length}
       history={history}
       templates={progress.templates}
+      firstRun={progress.sessions === 0}
+      draft={drafts[0]?.data ?? null}
     />
   );
 }

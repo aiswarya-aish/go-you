@@ -7,11 +7,39 @@ datasource db {
   provider = "postgresql"
 }
 
+// P3-01 (DD-053): a random id; the email is kept only as a keyed hash (HMAC, secret in env), never readable. Null only on pre-P3 rows,
+// which can no longer sign in and go at the launch wipe.
 model User {
   id           String    @id
-  email        String    @unique
+  emailHash    String?   @unique
   passwordHash String
+  name         String? // P3-05: a call sign as plain text, or "v1." + a typed name sealed with the email (lib/account.ts)
+  createdAt    DateTime  @default(now())
   workouts     Workout[]
+  exercises    Exercise[]
+  draft        WorkoutDraft?
+}
+
+// The workout in progress, mirrored from the phone a moment after each change (P1-01, DD-045). One per user: the last write wins.
+// Deleted when the workout is saved or discarded. `data` is the client's active-workout object as sent.
+model WorkoutDraft {
+  userId    String   @id
+  workoutId String
+  data      Json
+  updatedAt DateTime
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// The lifter's own name for an exercise slug ("Pull-up" for pullup), saved the first time it is logged (DD-040).
+model Exercise {
+  userId String
+  id     String // the slug used in ExerciseInstance.exerciseId
+  name   String
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([userId, id])
 }
 
 model Workout {
@@ -50,4 +78,20 @@ model SetEntry {
   exerciseInstance ExerciseInstance @relation(fields: [exerciseInstanceId], references: [id])
 
   @@index([exerciseInstanceId])
+}
+
+// The 6-digit code that proves an email before a password is set (sign-up and reset are the same flow). One live code per email.
+model EmailCode {
+  emailHash String   @id
+  codeHash  String
+  attempts  Int      @default(0)
+  createdAt DateTime
+  expiresAt DateTime
+}
+
+// Fixed-window counters for sign-in and code requests, keyed by hashed email or hashed IP (lib/rate-limit.ts).
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime
 }

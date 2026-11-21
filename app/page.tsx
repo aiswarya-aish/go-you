@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { rememberTimeZone } from "@/lib/time";
-
-const getCsrf = () =>
-  fetch("/api/auth/csrf")
-    .then((r) => r.json())
-    .then((d: { csrfToken: string }) => d.csrfToken);
+import { EMAIL_KEY, getCsrf, signInRequest } from "@/lib/sign-in";
 
 export default function AuthPage() {
   const router = useRouter();
@@ -15,6 +12,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const csrf = useRef<Promise<string> | null>(null);
 
   // While the user types: fetch the CSRF token and wake the server + database.
@@ -22,6 +20,11 @@ export default function AuthPage() {
     rememberTimeZone();
     csrf.current = getCsrf().catch(() => "");
     fetch("/api/warm").catch(() => {});
+    // P3-07: arriving from Delete account. Said once, then the URL is clean again.
+    if (new URLSearchParams(location.search).has("deleted")) {
+      setDeleted(true); // eslint-disable-line react-hooks/set-state-in-effect -- read once from the URL after mount
+      history.replaceState(null, "", "/");
+    }
   }, []);
 
   // The error stays until the user changes what caused it.
@@ -37,32 +40,33 @@ export default function AuthPage() {
 
     setLoading(true);
     try {
-      const csrfToken = (await csrf.current) || (await getCsrf());
-      // The same request next-auth's signIn() makes, without its extra session fetch and page reload.
-      const res = await fetch("/api/auth/callback/credentials", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ email, password, csrfToken, json: "true" }),
-      });
-      const { url } = (await res.json()) as { url?: string };
-      if (!url || new URL(url, location.href).searchParams.has("error")) {
-        csrf.current = getCsrf().catch(() => "");
-        setError("Invalid email or password.");
-        setLoading(false);
-        return;
-      }
-      router.replace("/app");
+      const result = await signInRequest(email, password, (await csrf.current) || (await getCsrf()));
+      if (result === "ok") return router.replace("/app");
+      csrf.current = getCsrf().catch(() => "");
+      setError(result === "tooMany" ? "Too many tries. Wait 15 minutes, or reset your password." : "Wrong email or password.");
     } catch {
       setError("No connection. Try again.");
-      setLoading(false);
     }
+    setLoading(false);
   }
+
+  // The email typed here follows to Create account / Forgot password (session storage, never the URL).
+  const carryEmail = () => {
+    try {
+      sessionStorage.setItem(EMAIL_KEY, email.trim());
+    } catch {}
+  };
 
   return (
     <main className="min-h-dvh flex items-center px-4 sm:px-6">
       <section className="w-full max-w-[420px] mx-auto sm:-translate-y-[4vh]">
         <h1 className="display text-6xl sm:text-7xl mb-3">GO—YOU</h1>
         <p className="label mb-10">Train. Log. Progress.</p>
+        {deleted && (
+          <p role="status" className="-mt-4 mb-8 border-l-2 border-[var(--fg)] pl-3 text-sm">
+            Your account and all its workouts are deleted.
+          </p>
+        )}
 
         <form className="space-y-6" onSubmit={handleLogin} noValidate>
           <div className="space-y-2">
@@ -105,7 +109,14 @@ export default function AuthPage() {
           </p>
         </form>
 
-        <p className="mt-6 text-xs text-[var(--muted)]">New here? Your account is created on first sign-in.</p>
+        <nav aria-label="Account" className="mt-6 grid grid-cols-2 border-t border-[var(--divider)]">
+          <Link href="/signup" onClick={carryEmail} className="press label flex min-h-[var(--tap)] items-center text-[var(--fg)]">
+            Create account
+          </Link>
+          <Link href="/reset" onClick={carryEmail} className="press label flex min-h-[var(--tap)] items-center justify-end">
+            Forgot password
+          </Link>
+        </nav>
       </section>
     </main>
   );

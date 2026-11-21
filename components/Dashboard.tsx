@@ -1,35 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useWorkoutStore } from "@/state/workoutStore";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { useWorkoutStore, type ActiveWorkout } from "@/state/workoutStore";
 import { useGoals } from "@/lib/goals";
 import type { ProgramTemplate } from "@/lib/templates";
 import type { ExerciseHistory } from "@/lib/history";
 import Logger, { type Receipt } from "@/components/Logger";
 import SegmentedBar from "@/components/SegmentedBar";
+import { brand } from "@/lib/name";
 
 export default function Dashboard({
   userId,
+  name,
   weeklyCount,
   monthlyCount,
   history,
   templates,
+  draft,
+  firstRun,
 }: {
   userId: string;
+  name?: string | null;
   weeklyCount: number;
   monthlyCount: number;
   history: ExerciseHistory;
   templates: ProgramTemplate[]; // earned routines; empty until unlocked (DD-037)
+  draft: ActiveWorkout | null; // an unfinished workout kept on the server (P1-01)
+  firstRun: boolean; // no saved workout yet: Train shows how it works (P3-03)
 }) {
   const stored = useWorkoutStore((s) => s.activeWorkout);
+  const endedId = useWorkoutStore((s) => s.endedId);
   const startWorkout = useWorkoutStore((s) => s.startWorkout);
+  // Until the phone's own copy is loaded, an offer to resume could be wrong (this device may have the workout itself).
+  const hydrated = useSyncExternalStore(
+    (cb) => useWorkoutStore.persist.onFinishHydration(cb),
+    () => useWorkoutStore.persist.hasHydrated(),
+    () => false,
+  );
   // A workout left on this device by another account is not shown.
   const activeWorkout = stored?.workout.userId === userId ? stored : null;
   const goals = useGoals();
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [declined, setDeclined] = useState(false);
+  const [savedElsewhere, setSavedElsewhere] = useState(false);
 
-  if (activeWorkout) return <Logger history={history} onSaved={setReceipt} />;
+  if (activeWorkout) return <Logger history={history} onSaved={setReceipt} onSavedElsewhere={() => setSavedElsewhere(true)} />;
+
+  const resumable =
+    hydrated && !declined && draft?.workout.userId === userId && draft.workout.id !== endedId && draft.sets.length > 0 ? draft : null;
 
   function startFromTemplate(template: ProgramTemplate) {
     startWorkout(userId, template.name);
@@ -41,11 +60,40 @@ export default function Dashboard({
   return (
     <section className="space-y-10">
       {receipt && <SavedReceipt receipt={receipt} onDismiss={() => setReceipt(null)} />}
+      {/* The workout left this screen because another device saved it: one plain line, so it never just vanishes. */}
+      {savedElsewhere && (
+        <p role="status" className="border-l-2 border-[var(--fg)] pl-3 text-sm">
+          That workout was saved on another device. It is in Log.
+        </p>
+      )}
+      {resumable && (
+        <ResumeCard
+          draft={resumable}
+          onResume={() => {
+            useWorkoutStore.getState().resumeWorkout(resumable);
+            window.scrollTo(0, 0);
+          }}
+          onDiscard={() => {
+            setDeclined(true);
+            fetch(`/api/draft?workout=${resumable.workout.id}`, { method: "DELETE" }).catch(() => {});
+          }}
+        />
+      )}
 
-      <header className="space-y-2">
+      <header className="space-y-2 [container-type:inline-size]">
         <p className="label">No active workout</p>
-        <h1 className="display text-5xl">Train</h1>
+        {/* P3-08: the brand is the Train title. One line, sized to fit: about 0.68em per letter after "GO—" (2.2em), capped at text-5xl.
+            shortcut: a 12-letter name of only W/M would still be clipped, upgrade to measuring the text if real names hit it. No animation: seen daily. */}
+        <h1
+          className="display overflow-x-clip whitespace-nowrap"
+          style={{ fontSize: `min(3rem, calc(100cqi / ${(2.2 + 0.68 * [...(name ?? "YOU")].length).toFixed(2)}))` }}
+        >
+          <span className="sr-only">Train</span>
+          <span aria-hidden="true">{brand(name)}</span>
+        </h1>
       </header>
+
+      {firstRun && !receipt && <FirstRun />}
 
       <button type="button" className="btn btn-primary btn-lg w-full" onClick={() => startWorkout(userId)}>
         Start blank
@@ -101,6 +149,60 @@ export default function Dashboard({
   );
 }
 
+// P3-03: Train's empty state for a new lifter, until the first workout is saved. No dismiss (it leaves by itself) and no
+// animation (it is the page, not an arrival). Read, choose the unit, then the Start blank button right below.
+const HOW = [
+  "Start blank, add a lift, log each set.",
+  "Every new best is marked PR the moment you log it.",
+  "After 21 sessions, the workouts you repeat become routines.",
+];
+
+function FirstRun() {
+  const unit = useWorkoutStore((s) => s.unit);
+  const setUnit = useWorkoutStore((s) => s.setUnit);
+  return (
+    <section aria-labelledby="first-run" className="space-y-4">
+      <h2 id="first-run" className="label text-[var(--fg)]">
+        How it works
+      </h2>
+      <ol className="border-b border-[var(--divider)]">
+        {HOW.map((line, i) => (
+          <li key={i} className="grid grid-cols-[2.25rem_1fr] items-baseline border-t border-[var(--divider)] py-3">
+            <span aria-hidden="true" className="label tabular">
+              0{i + 1}
+            </span>
+            <span className="text-pretty text-base leading-snug">{line}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="grid grid-cols-[1fr_9rem] items-center gap-4">
+        <div>
+          <p id="unit-label" className="label text-[var(--fg)]">
+            Weights in
+          </p>
+          <p className="mt-1 text-pretty text-sm text-[var(--muted)]">Switch any time, even mid-workout.</p>
+        </div>
+        {/* Same look as the Stats segments (Segment.tsx), as buttons: it sets the unit for logging and Stats. */}
+        <div role="group" aria-labelledby="unit-label" className="grid grid-cols-2 gap-px border border-[var(--control)] bg-[var(--control)]">
+          {(["kg", "lb"] as const).map((u) => (
+            <button
+              key={u}
+              type="button"
+              aria-pressed={unit === u}
+              onClick={() => setUnit(u)}
+              className={`press flex h-11 items-center justify-center text-xs font-bold uppercase tracking-[0.12em] ${
+                unit === u ? "bg-[var(--fg)] text-[var(--bg)]" : "bg-[var(--bg)]"
+              }`}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function GoalCell({ label, count, target }: { label: string; count: number; target: number }) {
   return (
     <div className="space-y-3 bg-[var(--bg)] p-4">
@@ -114,6 +216,43 @@ function GoalCell({ label, count, target }: { label: string; count: number; targ
   );
 }
 
+// An unfinished workout found on the server (another device, or this one after its storage was cleared). Ruled, not inverted:
+// it is a question, not a result. Discard needs a second tap, like discarding a live workout.
+function ResumeCard({ draft, onResume, onDiscard }: { draft: ActiveWorkout; onResume: () => void; onDiscard: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  useEffect(() => {
+    if (!confirm) return;
+    const t = setTimeout(() => setConfirm(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirm]);
+  const started = new Date(draft.workout.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const ex = draft.exercises.length;
+  const sets = draft.sets.length;
+
+  return (
+    <section aria-labelledby="resume" className="space-y-4 border-2 border-[var(--fg)] p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id="resume" className="label whitespace-nowrap text-[var(--fg)]">
+          Unfinished workout
+        </h2>
+        <span className="label whitespace-nowrap tabular">{started}</span>
+      </div>
+      <p className="text-3xl font-bold leading-none tracking-[-0.02em] tabular">
+        {ex} EX · {sets} {sets === 1 ? "SET" : "SETS"}
+      </p>
+      <p className="truncate text-sm text-[var(--muted)]">{draft.exercises.map((e) => e.label.toUpperCase()).join(" / ")}</p>
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" onClick={() => (confirm ? onDiscard() : setConfirm(true))} className="btn btn-lg">
+          {confirm ? "Tap again" : "Discard"}
+        </button>
+        <button type="button" onClick={onResume} className="btn btn-primary btn-lg">
+          Resume
+        </button>
+      </div>
+    </section>
+  );
+}
+
 // The peak-end moment: what you just did, in one inverted block.
 function SavedReceipt({ receipt, onDismiss }: { receipt: Receipt; onDismiss: () => void }) {
   return (
@@ -124,19 +263,40 @@ function SavedReceipt({ receipt, onDismiss }: { receipt: Receipt; onDismiss: () 
           Dismiss
         </button>
       </div>
-      <dl className="grid grid-cols-3 gap-4">
+      <dl className="grid grid-cols-[auto_auto_1fr] gap-x-6 gap-y-4">
         {[
           ["Time", receipt.duration],
           ["Sets", String(receipt.sets)],
-          ["PRs", String(receipt.prs)],
+          [`Volume ${receipt.unit}`, receipt.volume],
         ].map(([k, v]) => (
           <div key={k}>
             <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{k}</dt>
-            <dd className="text-3xl font-bold leading-none tabular">{v}</dd>
+            <dd className="text-3xl font-bold leading-none tracking-[-0.02em] tabular">{v}</dd>
           </div>
         ))}
       </dl>
-      {receipt.prs > 0 && <p className="text-sm font-semibold">{receipt.prNames.join(" · ")}</p>}
+      {/* The peak of the session: each new best, with how far it moved the estimated max. Rises in once, in order. */}
+      {receipt.prs.length > 0 && (
+        <div>
+          <p className="pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">
+            {receipt.prs.length === 1 ? "New best" : `${receipt.prs.length} new bests`}
+          </p>
+          <ul>
+            {receipt.prs.map((p, i) => (
+              <li
+                key={i}
+                style={{ "--i": i } as React.CSSProperties}
+                className="rise flex items-baseline justify-between gap-3 border-t border-[var(--muted)] py-2"
+              >
+                <span className="truncate text-base font-bold uppercase tracking-[-0.01em]">{p.name}</span>
+                <span className="shrink-0 text-sm font-bold tabular">
+                  {p.value} <span className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{p.what}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

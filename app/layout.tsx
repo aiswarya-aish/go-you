@@ -1,17 +1,22 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-// Only weights that are used: no faux bold (Space Grotesk tops out at 700).
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+// Self-hosted (the offline screen's file): builds never fetch Google Fonts, whose newer URLs broke a Vercel build (2026-11-16).
+// One variable file, latin, weights 300-700 (Space Grotesk tops out at 700, so no faux bold).
+const spaceGrotesk = localFont({
+  src: "../public/fonts/space-grotesk-latin.woff2",
+  weight: "300 700",
   variable: "--font-sans",
 });
 
 export const metadata: Metadata = {
   title: { default: "GO—YOU", template: "%s — GO—YOU" },
-  description: "Train. Log. Progress.",
+  description: "Log a set in seconds. See every record.",
+  // Link previews (chats, socials): absolute URLs need a base; the image is app/opengraph-image.png (rendered by scratchpad pg/og-render.cjs).
+  metadataBase: new URL("https://go-you.vercel.app"),
+  openGraph: { title: "GO—YOU", description: "Log a set in seconds. See every record.", siteName: "GO—YOU", type: "website" },
+  twitter: { card: "summary_large_image" },
   icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
   // iOS has no manifest-based install: these make "Add to Home Screen" open full screen with the right name.
   appleWebApp: { capable: true, title: "GO—YOU", statusBarStyle: "default" },

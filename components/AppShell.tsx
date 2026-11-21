@@ -4,6 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { rememberTimeZone } from "@/lib/time";
+import { RENEWED_KEY } from "@/lib/sign-in";
+import { brand } from "@/lib/name";
+import { rememberUnit } from "@/lib/lift";
 import { useWorkoutStore } from "@/state/workoutStore";
 import SignOutButton from "@/components/SignOutButton";
 
@@ -48,12 +51,25 @@ function NavList({ variant, live }: { variant: "side" | "tabs"; live: boolean })
   );
 }
 
-export default function AppShell({ children, user }: { children: React.ReactNode; user: { email?: string | null } }) {
+// P3-04: a session lasts 90 days from its last renewal, and reading it re-issues the cookie. Once a day is plenty;
+// sign-in stamps the day, so the first screen after it costs no extra request.
+function renewSession() {
+  try {
+    if (Date.now() - Number(localStorage.getItem(RENEWED_KEY)) < 86_400_000) return;
+    fetch("/api/auth/session")
+      .then((r) => r.ok && localStorage.setItem(RENEWED_KEY, String(Date.now())))
+      .catch(() => {});
+  } catch {}
+}
+
+export default function AppShell({ children, user }: { children: React.ReactNode; user: { name?: string | null } }) {
   const live = useWorkoutStore((s) => !!s.activeWorkout);
 
   useEffect(() => {
     rememberTimeZone();
-    useWorkoutStore.persist.rehydrate();
+    // The unit cookie follows this phone's remembered unit (accounts from before P3-03 have no cookie yet).
+    Promise.resolve(useWorkoutStore.persist.rehydrate()).then(() => rememberUnit(useWorkoutStore.getState().unit));
+    renewSession();
     // Offline Train + installability (DD-039). Production only, so dev reloads never serve a stale copy.
     if (process.env.NODE_ENV === "production") navigator.serviceWorker?.register("/sw.js").catch(() => {});
   }, []);
@@ -64,23 +80,21 @@ export default function AppShell({ children, user }: { children: React.ReactNode
         Skip to content
       </a>
 
-      {/* Mobile: brand bar. Navigation lives at the bottom, under the thumb. */}
-      <header className="flex h-12 items-center border-b border-[var(--divider)] px-4 md:hidden">
-        <span className="text-sm font-bold tracking-wide">GO—YOU</span>
-      </header>
-
+      {/* Mobile has no brand bar (DD-047, 2026-11-15): each page's own title is the header; navigation is the tab bar under the thumb. */}
       <aside className="hidden flex-col gap-8 border-r border-[var(--divider)] p-5 md:flex">
         <span className="text-sm font-bold tracking-wide">GO—YOU</span>
         <nav aria-label="Main">
           <NavList variant="side" live={live} />
         </nav>
         <div className="mt-auto space-y-3 border-t border-[var(--divider)] pt-5 text-sm">
-          <div className="break-all text-[var(--muted)]">{user.email}</div>
+          <p className="label text-[var(--fg)]">
+            {brand(user.name)} <span className="text-[var(--muted)]">· signed in</span>
+          </p>
           <SignOutButton />
         </div>
       </aside>
 
-      <main id="main" className="px-4 pt-6 pb-[calc(var(--tap-lg)+env(safe-area-inset-bottom)+2rem)] md:p-8">
+      <main id="main" className="px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(var(--tap-lg)+env(safe-area-inset-bottom)+2rem)] md:p-8">
         {children}
       </main>
 

@@ -31,6 +31,7 @@ export type ExerciseInstance = {
   label: string;
   order: number;
   variation?: string;
+  done?: boolean; // folded in the logger: sets shown, inputs hidden (P1-02 follow-up). Never sent to the workout tables.
 };
 
 /**

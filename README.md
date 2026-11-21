@@ -41,7 +41,8 @@ your workout stays put until you retry.
   over the last 7, 30 or 90 days or all time.
 - **Goals:** set how many times a week and a month you want to train, and follow your progress toward unlocking routines.
 
-Signing up is just an email and a password: the first time you sign in, your account is created.
+To create an account, enter your email, type the 6-digit code it receives, then choose a password. Forgot your password? The same three steps
+set a new one. You stay signed in for 90 days of use. Your email is never stored in readable form, only as a keyed fingerprint.
 
 ## Design
 
@@ -67,7 +68,7 @@ with its data in PostgreSQL on [Neon](https://neon.tech).
 |---|---|
 | App | Next.js 16 (App Router), React 19, TypeScript |
 | Styling | Tailwind CSS with a small set of design tokens, Space Grotesk |
-| Sign-in | NextAuth with email and password, passwords hashed with bcrypt |
+| Sign-in | NextAuth with email and password (bcrypt); email verified with a 6-digit code (nodemailer over SMTP) |
 | Data | Prisma ORM on PostgreSQL (Neon) |
 | Workout in progress | Zustand, saved to the browser's local storage |
 | Hosting | Vercel, with server functions in Singapore next to the database |

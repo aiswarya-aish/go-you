@@ -2,53 +2,126 @@ import { unstable_cache } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { workoutsTag } from "@/lib/stats";
-import { KG_PER_LB } from "@/lib/lift";
+import { exerciseName, KG_PER_LB } from "@/lib/lift";
 import { buildTemplates, TEMPLATE_UNLOCK_SESSIONS, type ProgramTemplate } from "@/lib/templates";
+import { bestsFrom, type Bests } from "@/lib/prs";
+import { liftBoard, type LiftSession } from "@/lib/lift-history";
 
 export type LastSet = { reps: number; weight: number; unit: string };
 export type ExerciseHistory = {
   last: Record<string, LastSet[]>; // sets from the most recent session of each exercise
-  bestE1rmKg: Record<string, number>; // all-time best Epley e1RM per exercise
+  bests: Record<string, Bests>; // all-time heaviest + rep frontier per exercise (PR kinds, DD-048)
+  mine: { id: string; name: string }[]; // every exercise the lifter has logged, most recent first, by their saved name
 };
 
-// Best Epley e1RM (kg) per exercise, optionally only from workouts that started before `before`.
-export async function bestE1rmByExercise(userId: string, before?: Date): Promise<Record<string, number>> {
-  const rows = await prisma.$queryRaw<{ exerciseId: string; best: number }[]>`
+// slug → the lifter's saved name (P1-05). Pages hand it to exerciseName().
+async function loadNames(userId: string): Promise<Record<string, string>> {
+  // Names only dress up slugs: if the table is missing (deploy before `migrate deploy`), pages still render with spelled-out slugs.
+  const rows = await prisma.exercise.findMany({ where: { userId }, select: { id: true, name: true } }).catch(() => []);
+  return Object.fromEntries(rows.map((r) => [r.id, r.name]));
+}
+
+export const getExerciseNames = (userId: string) =>
+  unstable_cache(() => loadNames(userId), ["names", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
+
+// Bests per exercise (heaviest + rep frontier, DD-048), optionally only from workouts that started before `before`.
+// One row per exercise and weight (in kg) with the most reps done at it; the frontier is built in JS.
+export async function bestsByExercise(userId: string, before?: Date): Promise<Record<string, Bests>> {
+  const rows = await prisma.$queryRaw<{ exerciseId: string; kg: number; reps: number }[]>`
     SELECT ei."exerciseId",
-           MAX(CASE WHEN s.unit = 'lb' THEN s.weight * ${KG_PER_LB} ELSE s.weight END * (1 + s.reps::float8 / 30)) AS best
+           CASE WHEN s.unit = 'lb' THEN s.weight * ${KG_PER_LB} ELSE s.weight END AS kg,
+           MAX(s.reps) AS reps
     FROM "SetEntry" s
     JOIN "ExerciseInstance" ei ON ei.id = s."exerciseInstanceId"
     JOIN "Workout" w ON w.id = ei."workoutId"
     WHERE w."userId" = ${userId} ${before ? Prisma.sql`AND w."startedAt" < ${before}` : Prisma.empty}
-    GROUP BY ei."exerciseId"`;
-  return Object.fromEntries(rows.map((r) => [r.exerciseId, Number(r.best)]));
+    GROUP BY 1, 2`;
+  const byExercise = new Map<string, { kg: number; reps: number }[]>();
+  for (const r of rows) (byExercise.get(r.exerciseId) ?? byExercise.set(r.exerciseId, []).get(r.exerciseId)!).push({ kg: Number(r.kg), reps: Number(r.reps) });
+  return Object.fromEntries([...byExercise].map(([id, list]) => [id, bestsFrom(list)]));
 }
 
 async function load(userId: string): Promise<ExerciseHistory> {
-  const [recent, bestE1rmKg] = await Promise.all([
+  const [recent, bests, names] = await Promise.all([
     // shortcut: only the last 150 exercise entries are scanned for "last session"; older-only exercises show no LAST line.
     prisma.exerciseInstance.findMany({
       where: { workout: { userId } },
-      orderBy: { workout: { startedAt: "desc" } },
+      orderBy: [{ workout: { startedAt: "desc" } }, { order: "desc" }], // newest session, last exercise first
       take: 150,
       relationLoadStrategy: "join",
       select: { exerciseId: true, sets: { orderBy: { createdAt: "asc" }, select: { reps: true, weight: true, unit: true } } },
     }),
-    bestE1rmByExercise(userId),
+    bestsByExercise(userId),
+    loadNames(userId),
   ]);
 
   const last: ExerciseHistory["last"] = {};
   for (const ex of recent) if (!last[ex.exerciseId] && ex.sets.length) last[ex.exerciseId] = ex.sets;
-  return { last, bestE1rmKg };
+  // Recent first (the order of `last`), then the rest of the lifter's exercises.
+  const mine = [...new Set([...Object.keys(last), ...Object.keys(bests)])].map((id) => ({
+    id,
+    name: names[id] ?? exerciseName(id),
+  }));
+  return { last, bests, mine };
 }
 
 export const getExerciseHistory = (userId: string) =>
   unstable_cache(() => load(userId), ["history", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
 
+// Joined exercise rows (oldest first) → sessions; one exercise may appear twice in a workout, so its sets merge.
+type LiftRow = { workoutId: string; workout: { startedAt: Date }; sets: LiftSession["sets"] };
+function toSessions(rows: LiftRow[]): LiftSession[] {
+  const sessions: LiftSession[] = [];
+  for (const r of rows) {
+    const last = sessions.at(-1);
+    if (last?.workoutId === r.workoutId) last.sets.push(...r.sets);
+    else sessions.push({ workoutId: r.workoutId, startedAt: r.workout.startedAt.toISOString(), sets: r.sets });
+  }
+  return sessions;
+}
+
+const liftSelect = {
+  workoutId: true,
+  workout: { select: { startedAt: true } },
+  sets: { orderBy: { createdAt: "asc" }, select: { id: true, reps: true, weight: true, unit: true } },
+} as const;
+const oldestFirst = [{ workout: { startedAt: "asc" } }, { order: "asc" }] as const;
+
+// Every session of one lift, oldest first (P2-02 lift page). One joined query; an exercise done twice in a workout is one session.
+async function loadLift(userId: string, slug: string): Promise<LiftSession[]> {
+  const rows = await prisma.exerciseInstance.findMany({
+    where: { exerciseId: slug, workout: { userId } },
+    orderBy: [...oldestFirst],
+    relationLoadStrategy: "join",
+    select: liftSelect,
+  });
+  return toSessions(rows);
+}
+
+// The PR board (P2-03) + PR sets per workout (Log): every lift's history in one query, reduced before it is cached.
+async function loadBoard(userId: string): Promise<ReturnType<typeof liftBoard>> {
+  const rows = await prisma.exerciseInstance.findMany({
+    where: { workout: { userId } },
+    orderBy: [...oldestFirst],
+    relationLoadStrategy: "join",
+    select: { exerciseId: true, ...liftSelect },
+  });
+  const byLift: Record<string, LiftRow[]> = {};
+  for (const r of rows) (byLift[r.exerciseId] ??= []).push(r);
+  return liftBoard(Object.fromEntries(Object.entries(byLift).map(([id, list]) => [id, toSessions(list)])));
+}
+
+export const getBoard = (userId: string) =>
+  // "board-2": the cached shape changed (DD-058); the data cache outlives deploys, so an old entry must never be read as the new one.
+  unstable_cache(() => loadBoard(userId), ["board-2", userId], { tags: [workoutsTag(userId)], revalidate: 3600 })();
+
+export const getLiftSessions = (userId: string, slug: string) =>
+  unstable_cache(() => loadLift(userId, slug), ["lift", userId, slug], { tags: [workoutsTag(userId)], revalidate: 3600 })();
+
 export type TemplateProgress = { sessions: number; templates: ProgramTemplate[] };
 
 async function loadTemplates(userId: string): Promise<TemplateProgress> {
-  const [sessions, recent] = await Promise.all([
+  const [sessions, recent, names] = await Promise.all([
     prisma.workout.count({ where: { userId } }),
     // shortcut: routines are looked for in the last 60 sessions only.
     prisma.workout.findMany({
@@ -58,9 +131,10 @@ async function loadTemplates(userId: string): Promise<TemplateProgress> {
       relationLoadStrategy: "join",
       select: { exercises: { orderBy: { order: "asc" }, select: { exerciseId: true } } },
     }),
+    loadNames(userId),
   ]);
   const unlocked = sessions >= TEMPLATE_UNLOCK_SESSIONS;
-  return { sessions, templates: unlocked ? buildTemplates(recent.map((w) => w.exercises.map((e) => e.exerciseId))) : [] };
+  return { sessions, templates: unlocked ? buildTemplates(recent.map((w) => w.exercises.map((e) => e.exerciseId)), 4, names) : [] };
 }
 
 // Session count + earned templates (empty until unlocked). Cached per user, cleared on every save.
