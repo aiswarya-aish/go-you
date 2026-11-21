@@ -16,9 +16,11 @@ interface WorkoutState {
   endedId?: string;
   unit: Unit; // remembered across workouts
   restTarget: number; // seconds, remembered across workouts
+  restAwayAt: string | null; // rest screens for sets up to this moment were put away (DD-060); persisted, so a reload keeps it
 
   setUnit: (unit: Unit) => void;
   setRestTarget: (seconds: number) => void;
+  putRestAway: (setCreatedAt: string) => void;
   startWorkout: (userId: string, title?: string) => void;
   endWorkout: () => void;
   resumeWorkout: (workout: ActiveWorkout) => void; // takes over an unfinished workout from the server (P1-01)
@@ -52,12 +54,14 @@ export const useWorkoutStore = create<WorkoutState>()(
         activeWorkout: null,
         unit: "kg",
         restTarget: DEFAULT_REST,
+        restAwayAt: null,
 
         setUnit: (unit) => {
           rememberUnit(unit);
           set({ unit });
         },
         setRestTarget: (restTarget) => set({ restTarget }),
+        putRestAway: (restAwayAt) => set({ restAwayAt }),
 
         startWorkout: (userId, title) =>
           set({
