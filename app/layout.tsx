@@ -12,7 +12,11 @@ const spaceGrotesk = localFont({
 
 export const metadata: Metadata = {
   title: { default: "GO—YOU", template: "%s — GO—YOU" },
-  description: "Train. Log. Progress.",
+  description: "Log a set in seconds. See every record.",
+  // Link previews (chats, socials): absolute URLs need a base; the image is app/opengraph-image.png (rendered by scratchpad pg/og-render.cjs).
+  metadataBase: new URL("https://go-you.vercel.app"),
+  openGraph: { title: "GO—YOU", description: "Log a set in seconds. See every record.", siteName: "GO—YOU", type: "website" },
+  twitter: { card: "summary_large_image" },
   icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
   // iOS has no manifest-based install: these make "Add to Home Screen" open full screen with the right name.
   appleWebApp: { capable: true, title: "GO—YOU", statusBarStyle: "default" },
