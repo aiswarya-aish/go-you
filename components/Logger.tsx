@@ -12,7 +12,7 @@ import ExercisePicker from "@/components/ExercisePicker";
 import NumberField from "@/components/NumberField";
 import SetRow from "@/components/SetRow";
 import StatGrid from "@/components/StatGrid";
-import RestTimer from "@/components/RestTimer";
+import RestTimer, { type LoggedSet } from "@/components/RestTimer";
 import { useNow } from "@/lib/useNow";
 import { useDraftSync } from "@/lib/useDraftSync";
 import { formatClock } from "@/lib/time";
@@ -73,17 +73,26 @@ export default function Logger({
     return () => clearTimeout(t);
   }, [finishing]);
 
-  const prs = new Map<string, PrKind | null>(); // set id → its PR kind (DD-048)
+  const prs = new Map<string, Pr | null>(); // set id → its PR (DD-048): the rows show the kind, the rest screen the gain
   for (const ex of active.exercises) {
     const sets = active.sets.filter((s) => s.exerciseInstanceId === ex.id);
-    prKinds(sets, history.bests[ex.exerciseId]).forEach((pr, i) => prs.set(sets[i].id, pr?.kind ?? null));
+    prKinds(sets, history.bests[ex.exerciseId]).forEach((pr, i) => prs.set(sets[i].id, pr));
   }
   // The Finish sheet is the only reader: built while it is open or sliding away, not on every logged set (it was redone, unseen, each time).
   const report = finishing || sheetUp ? sessionReport(active.exercises, active.sets, history.last, history.bests) : null;
   const gain = (p: Pr) => prGain(p, unit); // "+2.5" "kg heavier", "+2" "more reps" (shared with Stats)
   const volume = report ? formatNumber(Math.round(fromKg(report.volumeKg, unit))) : "";
-  // Rest counts from the newest set (sets are kept in time order).
-  const lastSetAt = active.sets.at(-1)?.createdAt;
+  // Rest counts from the newest set (sets are kept in time order). The rest screen says which set that was, and its PR.
+  const newest = active.sets.at(-1);
+  let logged: LoggedSet | undefined;
+  if (newest) {
+    logged = {
+      ...newest,
+      name: active.exercises.find((e) => e.id === newest.exerciseInstanceId)?.label ?? "",
+      number: active.sets.filter((s) => s.exerciseInstanceId === newest.exerciseInstanceId).length,
+      pr: prs.get(newest.id) ?? null,
+    };
+  }
   useWakeLock();
   // Saved from another device while this one still had it open: let it go, say why, and show the fresh Train.
   const synced = useDraftSync(active, () => {
@@ -179,12 +188,12 @@ export default function Logger({
 
   return (
     <section className="space-y-6">
-      {/* Workout bar (+ rest strip once a set is logged): where am I, how long, how much, and the way out. */}
+      {/* Workout bar: where am I, how long, how much, and the way out. While resting, its title slot is the rest countdown (DD-060). */}
       {/* Flush with the top of the page (cancels main's top padding): no white band above the bar. */}
       <div className="sticky top-0 z-30 -mx-4 -mt-6 md:mx-0 md:mt-0">
         <h1 className="sr-only">Workout in progress</h1>
         <div className="flex h-[var(--tap-lg)] items-center gap-3 bg-[var(--fg)] px-4 text-[var(--bg)]">
-          <span className="min-w-0 flex-1 truncate text-sm font-bold uppercase tracking-[0.08em]">{active.title ?? "Workout"}</span>
+          <RestTimer title={active.title ?? "Workout"} last={logged} onUndo={handleRemove} />
           {/* Shown only when something is wrong: the latest sets have not reached the server yet (they are safe on the phone). */}
           <span role="status" className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">
             {synced ? "" : "Offline"}
@@ -205,7 +214,6 @@ export default function Logger({
             Finish
           </button>
         </div>
-        {lastSetAt && <RestTimer lastSetAt={lastSetAt} />}
       </div>
 
       <div className="space-y-8">
@@ -467,7 +475,7 @@ function ExerciseBlock({
 }: {
   exercise: ExerciseInstance;
   sets: SetEntry[];
-  prs: Map<string, PrKind | null>;
+  prs: Map<string, Pr | null>;
   last?: { reps: number; weight: number; unit: string }[];
   best?: Bests;
   unit: Unit;
@@ -501,7 +509,7 @@ function ExerciseBlock({
   }
 
   return (
-    <article id={`exercise-${exercise.id}`} className="scroll-mt-32 space-y-4" aria-labelledby={`ex-${exercise.id}`}>
+    <article id={`exercise-${exercise.id}`} className="scroll-mt-20 space-y-4" aria-labelledby={`ex-${exercise.id}`}>
       <header className="border-t-2 border-[var(--fg)] pt-2">
         {/* Full-bleed, so the arrival flash reads like the picker row that was tapped. */}
         <div className={`-mx-4 -mb-2 grid grid-cols-[1fr_auto] items-start gap-3 px-4 py-2 md:mx-0 md:px-0 ${arriving ? "arrive" : ""}`}>
@@ -552,7 +560,7 @@ function ExerciseBlock({
       {sets.length > 0 && (
         <ol className="border-b border-[var(--divider)]">
           {sets.map((s, i) => (
-            <SetRow key={s.id} set={s} index={i} pr={prs.get(s.id) ?? null} isNew={s.id === lastLogged} onRemove={onRemove} />
+            <SetRow key={s.id} set={s} index={i} pr={prs.get(s.id)?.kind ?? null} isNew={s.id === lastLogged} onRemove={onRemove} />
           ))}
         </ol>
       )}
